@@ -1,0 +1,7 @@
+{
+  "name": "Product Roadmap Generator",
+  "description": "A visual canvas for building, debugging, and deploying multi-step GenAI agent workflows using Gemini.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

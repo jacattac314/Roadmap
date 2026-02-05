@@ -1,0 +1,330 @@
+import React, { useRef, useState } from 'react';
+import { NodeData, NodeType } from '../types';
+import { MODEL_OPTIONS } from '../constants';
+import { X, Settings, AlignLeft, Bot, FileText, Mic, Upload, StopCircle, Globe } from 'lucide-react';
+
+interface PropertiesPanelProps {
+  node: NodeData | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onUpdate: (updatedNode: NodeData) => void;
+}
+
+export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, onClose, onUpdate }) => {
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  if (!node) return null;
+
+  const handleChange = (field: string, value: any) => {
+    const updatedNode = {
+      ...node,
+      config: {
+        ...node.config,
+        [field]: value
+      }
+    };
+    onUpdate(updatedNode);
+  };
+
+  const handleLabelChange = (value: string) => {
+    onUpdate({ ...node, label: value });
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = (reader.result as string).split(',')[1];
+        onUpdate({
+          ...node,
+          config: {
+            ...node.config,
+            inputType: 'file',
+            fileName: file.name,
+            fileMimeType: file.type,
+            fileData: base64String
+          }
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = mediaRecorder;
+      
+      const chunks: BlobPart[] = [];
+      mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64String = (reader.result as string).split(',')[1];
+          onUpdate({
+            ...node,
+            config: {
+              ...node.config,
+              inputType: 'audio',
+              audioData: base64String
+            }
+          });
+        };
+        reader.readAsDataURL(blob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error('Error accessing microphone:', err);
+      alert('Could not access microphone. Please check permissions.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  return (
+    <div className={`fixed right-0 top-16 bottom-0 w-96 bg-white border-l border-gray-200 shadow-xl transform transition-transform duration-300 ease-in-out z-20 flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <Settings className="text-gray-400" size={18} />
+          <h2 className="text-lg font-semibold text-gray-900">Properties</h2>
+        </div>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <X size={20} />
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        
+        {/* Common Fields */}
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Label</label>
+            <input
+              type="text"
+              value={node.label}
+              onChange={(e) => handleLabelChange(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <input
+              type="text"
+              value={node.description || ''}
+              onChange={(e) => onUpdate({...node, description: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-600"
+            />
+          </div>
+        </div>
+
+        <hr className="border-gray-100" />
+
+        {/* Type Specific Fields */}
+        
+        {node.type === NodeType.TRIGGER && (
+          <div className="space-y-4">
+             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+              <AlignLeft size={14} /> Input Configuration
+            </h3>
+
+            {/* Input Type Selection */}
+            <div className="flex p-1 bg-gray-100 rounded-lg">
+              <button
+                onClick={() => handleChange('inputType', 'text')}
+                className={`flex-1 flex items-center justify-center py-1.5 text-xs font-medium rounded-md transition-all ${node.config.inputType === 'text' || !node.config.inputType ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <AlignLeft size={14} className="mr-1" /> Text
+              </button>
+              <button
+                onClick={() => handleChange('inputType', 'file')}
+                className={`flex-1 flex items-center justify-center py-1.5 text-xs font-medium rounded-md transition-all ${node.config.inputType === 'file' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <FileText size={14} className="mr-1" /> File
+              </button>
+              <button
+                onClick={() => handleChange('inputType', 'audio')}
+                className={`flex-1 flex items-center justify-center py-1.5 text-xs font-medium rounded-md transition-all ${node.config.inputType === 'audio' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <Mic size={14} className="mr-1" /> Audio
+              </button>
+            </div>
+
+            {/* Dynamic Input Fields */}
+            {(node.config.inputType === 'text' || !node.config.inputType) && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Static Text Input</label>
+                <textarea
+                  rows={6}
+                  value={node.config.staticInput || ''}
+                  onChange={(e) => handleChange('staticInput', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm font-mono"
+                  placeholder="Enter test requirements..."
+                />
+              </div>
+            )}
+
+            {node.config.inputType === 'file' && (
+              <div className="space-y-3">
+                 <label className="block text-sm font-medium text-gray-700">Upload Transcript/Doc</label>
+                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                    <Upload className="text-gray-400 mb-2" size={24} />
+                    <span className="text-sm text-gray-500">{node.config.fileName || 'Click to upload'}</span>
+                    <input 
+                      type="file" 
+                      ref={fileInputRef} 
+                      className="hidden" 
+                      accept=".txt,.pdf,.docx" 
+                      onChange={handleFileUpload}
+                    />
+                 </div>
+                 {node.config.fileData && (
+                   <div className="text-xs text-emerald-600 font-medium flex items-center gap-1">
+                     <FileText size={12} /> Ready for processing
+                   </div>
+                 )}
+              </div>
+            )}
+
+            {node.config.inputType === 'audio' && (
+               <div className="space-y-3">
+                 <label className="block text-sm font-medium text-gray-700">Record Instructions</label>
+                 <div className="flex items-center justify-center p-6 border border-gray-200 rounded-lg bg-gray-50">
+                    {!isRecording ? (
+                      <button 
+                        onClick={startRecording}
+                        className="flex flex-col items-center gap-2 group"
+                      >
+                        <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center group-hover:bg-rose-200 transition-colors">
+                          <Mic size={24} />
+                        </div>
+                        <span className="text-xs font-medium text-gray-600">Start Recording</span>
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={stopRecording}
+                         className="flex flex-col items-center gap-2 group"
+                      >
+                         <div className="w-12 h-12 rounded-full bg-rose-600 text-white flex items-center justify-center animate-pulse">
+                          <StopCircle size={24} />
+                        </div>
+                        <span className="text-xs font-medium text-rose-600">Stop Recording</span>
+                      </button>
+                    )}
+                 </div>
+                 {node.config.audioData && !isRecording && (
+                    <div className="flex items-center justify-between p-2 bg-emerald-50 rounded border border-emerald-100">
+                      <span className="text-xs text-emerald-600 font-medium">Audio Captured</span>
+                      <button 
+                        onClick={() => handleChange('audioData', null)}
+                        className="text-xs text-rose-500 hover:underline"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                 )}
+               </div>
+            )}
+            
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Output Variable</label>
+               <input
+                type="text"
+                value={node.config.outputVar || ''}
+                onChange={(e) => handleChange('outputVar', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm font-mono text-gray-600"
+                placeholder="e.g. userInput"
+               />
+            </div>
+          </div>
+        )}
+
+        {node.type === NodeType.AGENT && (
+          <div className="space-y-4">
+             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+              <Bot size={14} /> Model Configuration
+            </h3>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+              <select
+                value={node.config.model || 'gemini-3-flash-preview'}
+                onChange={(e) => handleChange('model', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+              >
+                {MODEL_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <div className="flex items-center gap-2">
+                <Globe size={16} className="text-indigo-600" />
+                <span className="text-sm font-medium text-gray-700">Google Search</span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  className="sr-only peer"
+                  checked={node.config.useSearch || false}
+                  onChange={(e) => handleChange('useSearch', e.target.checked)}
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">System Instruction</label>
+              <textarea
+                rows={2}
+                value={node.config.systemInstruction || ''}
+                onChange={(e) => handleChange('systemInstruction', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                placeholder="e.g. You are a helpful assistant..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Prompt Template</label>
+              <textarea
+                rows={6}
+                value={node.config.prompt || ''}
+                onChange={(e) => handleChange('prompt', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm font-mono"
+                placeholder="Enter prompt with {{variables}}..."
+              />
+              <p className="mt-1 text-xs text-gray-500">Use {'{{variableName}}'} to reference outputs from previous nodes.</p>
+            </div>
+
+            <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Output Variable</label>
+               <input
+                type="text"
+                value={node.config.outputVar || ''}
+                onChange={(e) => handleChange('outputVar', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm font-mono text-gray-600"
+                placeholder="e.g. agentOutput"
+               />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
