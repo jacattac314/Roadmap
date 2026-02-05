@@ -5,7 +5,7 @@ import { Canvas } from './components/Canvas';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { ExecutionModal } from './components/ExecutionModal';
 import { generateAgentResponse } from './services/geminiService';
-import { Play, Share2, Layout, Download } from 'lucide-react';
+import { Play, Share2, Layout, Download, Grid } from 'lucide-react';
 
 // Helper type for context values that can be text or complex media objects
 interface ContextValue {
@@ -73,19 +73,6 @@ export default function App() {
     
     // Check if the prompt references a variable that has media parts
     const interpolatedText = interpolateVariablesText(promptTemplate, context);
-    
-    // Scan for media variables to attach (simple implementation: if var is referenced and has parts, add them)
-    // Note: The text is already interpolated, so we just check context for file attachments
-    // that might have been referenced or imply attachment.
-    // For this simple implementation, if a node inputs a file, we usually want it in context.
-    // But since we use text interpolation, we only look for file parts if explicitly needed or 
-    // if the prompt is simple.
-    // Enhanced: Check if top-level keys used in prompt have parts.
-    
-    // However, simplest way for Gemini is to append media parts if they exist in the variables referenced.
-    // We'll stick to text-first for this optimization unless we detect specific file inputs.
-    // Since we simplified variables to text/data, we just send the text prompt.
-    // If we need media, we'd need to check if 'userInput' was referenced and had parts.
     
     Object.keys(context).forEach(key => {
         if (promptTemplate.includes(`{{${key}}}`) && context[key].parts) {
@@ -307,42 +294,40 @@ ${structuredResources || 'None specified'}
   };
 
   return (
-    <div className="flex flex-col h-screen bg-white text-gray-900">
+    <div className="flex flex-col h-screen bg-cream text-slate font-sans selection:bg-teal selection:text-white">
       {/* Top Navigation */}
-      <header className="h-16 border-b border-gray-200 flex items-center justify-between px-6 bg-white z-30 relative">
+      <header className="h-16 border-b-2 border-slate bg-cream flex items-center justify-between px-6 z-30 relative shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold shadow-indigo-200 shadow-lg">
-            P
+          <div className="w-8 h-8 bg-slate rounded-none border-2 border-slate flex items-center justify-center text-cream font-bold shadow-hard-sm">
+            G
           </div>
           <div>
-            <h1 className="font-bold text-gray-900 leading-none">Product Roadmap Generator</h1>
-            <span className="text-[10px] text-gray-500 font-medium tracking-wider uppercase">Gemini Powered</span>
+            <h1 className="font-bold text-slate text-xl tracking-tight">Roadmap<span className="text-terra">Gen</span></h1>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="px-4 py-1.5 bg-gray-100 rounded-full text-xs font-medium text-gray-600 flex items-center gap-2">
-            <Layout size={12} />
-            <span>Product Mgmt Suite</span>
-          </div>
+           <span className="text-xs font-bold uppercase tracking-widest text-teal flex items-center gap-1.5 border-2 border-teal px-3 py-1 rounded-full bg-cream">
+              <Grid size={12} /> Gemini Powered
+           </span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
            <button 
              onClick={exportLogs}
              disabled={logs.length === 0}
-             className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-md transition-colors flex items-center gap-2 disabled:opacity-50"
+             className="px-4 py-2 text-sm font-bold text-slate hover:text-teal transition-colors flex items-center gap-2 disabled:opacity-50 uppercase tracking-wide"
            >
             <Download size={16} />
-            Export JSON
+            JSON
           </button>
           <button
             onClick={runWorkflow}
             disabled={isRunning}
-            className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 rounded-md shadow-sm transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`px-6 py-2 text-sm font-bold bg-terra text-cream border-2 border-slate shadow-hard hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed rounded-none`}
           >
             <Play size={16} fill="currentColor" />
-            {isRunning ? 'Generating...' : 'Run Generator'}
+            {isRunning ? 'GENERATING...' : 'RUN GENERATOR'}
           </button>
         </div>
       </header>
@@ -351,14 +336,14 @@ ${structuredResources || 'None specified'}
       <div className="flex-1 relative overflow-hidden flex">
         
         {/* Toolbar (Left) */}
-        <div className="w-16 border-r border-gray-200 bg-white flex flex-col items-center py-6 gap-4 z-20">
-           <div className="p-2 bg-emerald-50 text-emerald-600 rounded-md cursor-grab active:cursor-grabbing hover:bg-emerald-100 transition-colors" title="Drag Trigger">
+        <div className="w-20 border-r-2 border-slate bg-cream flex flex-col items-center py-8 gap-6 z-20">
+           <div className="p-3 bg-white border-2 border-slate text-slate shadow-hard-sm cursor-grab active:cursor-grabbing hover:bg-teal hover:text-white transition-colors" title="Drag Trigger">
              <Play size={20} />
            </div>
-           <div className="p-2 bg-blue-50 text-blue-600 rounded-md cursor-grab active:cursor-grabbing hover:bg-blue-100 transition-colors" title="Drag Agent">
+           <div className="p-3 bg-white border-2 border-slate text-slate shadow-hard-sm cursor-grab active:cursor-grabbing hover:bg-teal hover:text-white transition-colors" title="Drag Agent">
              <Layout size={20} />
            </div>
-           <div className="h-px w-8 bg-gray-200 my-2" />
+           <div className="h-[2px] w-8 bg-slate/20 my-2" />
         </div>
 
         {/* Canvas Area */}

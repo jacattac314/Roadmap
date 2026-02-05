@@ -34,9 +34,9 @@ export const Canvas: React.FC<CanvasProps> = ({
     const ty = targetNode.y;
 
     // Cubic Bezier Control Points
-    const c1x = sx + 100;
+    const c1x = sx + 80;
     const c1y = sy;
-    const c2x = tx - 100;
+    const c2x = tx - 80;
     const c2y = ty;
 
     return `M ${sx} ${sy} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${tx} ${ty}`;
@@ -76,7 +76,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   return (
     <div
       ref={canvasRef}
-      className="w-full h-full bg-gray-50 pattern-grid overflow-hidden relative select-none"
+      className="w-full h-full bg-cream pattern-grid overflow-hidden relative select-none"
       onMouseMove={handleCanvasMouseMove}
       onMouseUp={handleCanvasMouseUp}
       onMouseLeave={handleCanvasMouseUp}
@@ -86,15 +86,15 @@ export const Canvas: React.FC<CanvasProps> = ({
       <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
         <defs>
           <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-            <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8" />
+            <polygon points="0 0, 10 3.5, 0 7" fill="#456365" />
           </marker>
         </defs>
         {edges.map(edge => (
           <path
             key={edge.id}
             d={getPath(edge.source, edge.target)}
-            stroke="#94a3b8"
-            strokeWidth="2"
+            stroke="#456365"
+            strokeWidth="3"
             fill="none"
             markerEnd="url(#arrowhead)"
           />
@@ -115,8 +115,8 @@ export const Canvas: React.FC<CanvasProps> = ({
       </div>
 
       {/* Instructions Overlay */}
-      <div className="absolute bottom-4 left-4 bg-white/80 backdrop-blur p-3 rounded-lg shadow-sm border border-gray-200 text-xs text-gray-500 pointer-events-none">
-        Drag nodes to rearrange. Click a node to configure.
+      <div className="absolute bottom-6 left-6 bg-white border-2 border-slate p-3 shadow-hard-sm text-xs font-bold text-slate pointer-events-none">
+        DRAG NODES TO ARRANGE. CLICK TO EDIT.
       </div>
     </div>
   );

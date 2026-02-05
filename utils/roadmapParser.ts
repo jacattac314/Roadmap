@@ -105,6 +105,7 @@ export const parseRoadmapData = (extractedData: any, roadmapPlan: any): RoadmapD
             
             // Intelligent Fields
             status: status,
+            subtasks: meta.subtasks || [],
             risk: risk,
             riskReason: meta.risk_reason,
             team: meta.assigned_team || 'General',

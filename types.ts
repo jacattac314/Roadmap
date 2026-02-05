@@ -80,6 +80,11 @@ export interface Workstream {
   purpose: string; // Single sentence narrative
 }
 
+export interface Subtask {
+  name: string;
+  status: Status;
+}
+
 export interface RoadmapFeature {
   id: string;
   name: string;
@@ -92,6 +97,7 @@ export interface RoadmapFeature {
   
   // Intelligent Fields
   status: Status;
+  subtasks?: Subtask[]; // Broken down tasks
   risk: RiskLevel;
   riskReason?: string;
   team: string; // e.g., "Backend", "Frontend", "Design"

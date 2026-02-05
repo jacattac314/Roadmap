@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { ExecutionLog } from '../types';
-import { CheckCircle, Circle, Loader2, XCircle, Terminal, Globe, ExternalLink, Map as MapIcon, FileText } from 'lucide-react';
+import { ExecutionLog, NodeData } from '../types';
+import { CheckCircle, Circle, Loader2, XCircle, Terminal, Map as MapIcon, FileText, ArrowRight, Activity, ChevronRight, ChevronDown, X } from 'lucide-react';
 import { parseRoadmapData } from '../utils/roadmapParser';
 import { RoadmapVisualizer } from './RoadmapVisualizer';
+import { INITIAL_NODES } from '../constants';
 
 interface ExecutionModalProps {
   isOpen: boolean;
@@ -11,65 +12,21 @@ interface ExecutionModalProps {
   isRunning: boolean;
 }
 
-// Component to render Mermaid diagrams
-const MermaidDiagram: React.FC<{ code: string }> = ({ code }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [svg, setSvg] = useState<string>('');
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const renderDiagram = async () => {
-      if (containerRef.current && (window as any).mermaid) {
-        try {
-          // Unique ID for each render to prevent conflicts
-          const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
-          // Render returns an object { svg: string } in v10
-          const { svg } = await (window as any).mermaid.render(id, code);
-          setSvg(svg);
-          setError(null);
-        } catch (err: any) {
-          console.error("Mermaid rendering error:", err);
-          setError("Failed to render chart. Syntax might be invalid.");
-        }
-      }
-    };
-
-    renderDiagram();
-  }, [code]);
-
-  if (error) {
-    return (
-        <div className="text-xs text-rose-600 bg-rose-50 p-2 rounded border border-rose-100 font-mono">
-            {error}
-            <pre className="mt-1 text-[10px] text-gray-500 overflow-x-auto">{code}</pre>
-        </div>
-    );
-  }
-
-  return (
-    <div 
-      ref={containerRef} 
-      className="overflow-x-auto bg-white p-2 rounded border border-gray-100"
-      dangerouslySetInnerHTML={{ __html: svg }} 
-    />
-  );
-};
+const STEPS = [
+  { id: 'agent-extract', label: 'Extract & Prioritize', icon: FileText, desc: 'Parsing requirements...' },
+  { id: 'agent-plan', label: 'Plan & Intelligence', icon: Activity, desc: 'Analyzing risks & dependencies...' },
+  { id: 'agent-polish', label: 'Polish & Export', icon: CheckCircle, desc: 'Formatting output...' },
+  { id: 'agent-visualize', label: 'Timeline Visualizer', icon: MapIcon, desc: 'Generating charts...' }
+];
 
 export const ExecutionModal: React.FC<ExecutionModalProps> = ({ isOpen, onClose, logs, isRunning }) => {
+  const [activeTab, setActiveTab] = useState<'progress' | 'visualizer'>('progress');
+  const [showLogs, setShowLogs] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<'logs' | 'visualizer'>('logs');
-
-  useEffect(() => {
-    if (isOpen && bottomRef.current && activeTab === 'logs') {
-      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [logs, isOpen, activeTab]);
 
   // Determine if we have enough data to show the roadmap
   const roadmapData = useMemo(() => {
-    // We need data from Step 1 (Extract) and Step 2 (Plan) to build the full visualizer
     const extractLog = logs.find(l => l.nodeLabel === 'Extract & Prioritize' && l.status === 'success');
-    // Note: Match the exact label from constants.ts
     const planLog = logs.find(l => l.nodeLabel === 'Plan & Intelligence' && l.status === 'success');
 
     if (extractLog?.output && planLog?.output) {
@@ -78,162 +35,165 @@ export const ExecutionModal: React.FC<ExecutionModalProps> = ({ isOpen, onClose,
     return null;
   }, [logs]);
 
-  // Switch to visualizer automatically when ready, if user hasn't interacted
+  // Switch to visualizer automatically when finished
   useEffect(() => {
-    if (roadmapData && !isRunning && activeTab === 'logs') {
-      setActiveTab('visualizer');
+    if (roadmapData && !isRunning && activeTab === 'progress') {
+       // Small delay to let user see completion
+       const timer = setTimeout(() => setActiveTab('visualizer'), 800);
+       return () => clearTimeout(timer);
     }
   }, [roadmapData, isRunning]);
 
+  useEffect(() => {
+    if (showLogs && bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, showLogs]);
+
   if (!isOpen) return null;
 
+  const getStepStatus = (stepId: string) => {
+    const log = logs.find(l => l.nodeId === stepId);
+    if (!log) return 'pending';
+    return log.status;
+  };
+
+  const currentStepIndex = STEPS.findIndex(s => getStepStatus(s.id) === 'running');
+  const completedCount = STEPS.filter(s => getStepStatus(s.id) === 'success').length;
+  const progressPercent = (completedCount / STEPS.length) * 100;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-6">
-      <div className={`bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden transition-all duration-300 ${activeTab === 'visualizer' ? 'w-full max-w-[90vw] h-[90vh]' : 'w-[700px] max-h-[85vh]'}`}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate/50 backdrop-blur-sm p-4 transition-all">
+      <div className={`bg-cream border-2 border-slate shadow-hard flex flex-col overflow-hidden transition-all duration-500 ease-in-out ${activeTab === 'visualizer' ? 'w-[95vw] h-[95vh]' : 'w-[600px] max-h-[80vh]'}`}>
         
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 shrink-0">
+        <div className="px-6 py-4 border-b-2 border-slate flex justify-between items-center bg-white shrink-0">
           <div className="flex items-center gap-4">
-             <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-              <Terminal size={20} className="text-gray-500" />
-              Workflow Execution
-            </h3>
-            
-            {/* Tabs */}
-            <div className="flex p-1 bg-gray-200 rounded-lg">
-              <button
-                onClick={() => setActiveTab('logs')}
-                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === 'logs' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-600 hover:text-gray-900'}`}
-              >
-                <FileText size={14} /> Logs
-              </button>
-              <button
-                onClick={() => setActiveTab('visualizer')}
-                disabled={!roadmapData}
-                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === 'visualizer' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed'}`}
-              >
-                <MapIcon size={14} /> Visual Roadmap
-              </button>
-            </div>
+             <div className={`p-2 border-2 border-slate ${isRunning ? 'bg-cream text-teal' : 'bg-teal text-white'}`}>
+               <Activity size={24} className={isRunning ? "animate-pulse" : ""} />
+             </div>
+             <div>
+               <h3 className="text-xl font-bold text-slate leading-none uppercase tracking-wide">
+                 {isRunning ? 'Building Roadmap' : 'Roadmap Ready'}
+               </h3>
+               <p className="text-xs text-slate/70 font-bold mt-1 uppercase tracking-widest">
+                 {isRunning ? 'Agents Active' : 'Visualization Complete'}
+               </p>
+             </div>
           </div>
-         
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-            disabled={isRunning}
-          >
-            <XCircle size={24} />
-          </button>
+          
+          <div className="flex items-center gap-4">
+            {roadmapData && (
+               <div className="flex bg-cream border-2 border-slate p-1 gap-1">
+                 <button
+                    onClick={() => setActiveTab('progress')}
+                    className={`px-3 py-1 text-xs font-bold uppercase transition-colors ${activeTab === 'progress' ? 'bg-slate text-white' : 'text-slate hover:bg-slate/10'}`}
+                  >
+                    Progress
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('visualizer')}
+                    className={`px-3 py-1 text-xs font-bold uppercase transition-colors ${activeTab === 'visualizer' ? 'bg-teal text-white' : 'text-slate hover:bg-teal/10'}`}
+                  >
+                    View
+                  </button>
+               </div>
+            )}
+            <button onClick={onClose} className="text-slate hover:text-terra border-2 border-transparent hover:border-terra p-1">
+              <X size={24} />
+            </button>
+          </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden relative bg-gray-50/50">
+        <div className="flex-1 overflow-hidden relative bg-cream">
           
-          {activeTab === 'logs' && (
-            <div className="h-full overflow-y-auto p-6 space-y-6">
-              {logs.length === 0 && isRunning && (
-                <div className="flex items-center justify-center py-8 text-gray-500">
-                  <Loader2 className="animate-spin mr-2" /> Initializing...
+          {activeTab === 'progress' && (
+            <div className="h-full overflow-y-auto p-8">
+              {/* Progress Bar */}
+              <div className="mb-10">
+                <div className="flex justify-between text-xs font-bold text-slate mb-2 uppercase tracking-widest">
+                  <span>Sequence Progress</span>
+                  <span>{Math.round(progressPercent)}%</span>
                 </div>
-              )}
+                <div className="h-4 bg-white border-2 border-slate">
+                  <div 
+                    className="h-full bg-teal transition-all duration-500 ease-out border-r-2 border-slate"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+              </div>
 
-              {logs.map((log, idx) => (
-                <div key={idx} className="relative pl-8 pb-2">
-                  {/* Timeline Line */}
-                  {idx !== logs.length - 1 && (
-                    <div className="absolute left-[11px] top-6 bottom-0 w-0.5 bg-gray-200" />
-                  )}
+              {/* Steps */}
+              <div className="space-y-6">
+                {STEPS.map((step, idx) => {
+                  const status = getStepStatus(step.id);
+                  const isCurrent = status === 'running';
+                  const isDone = status === 'success';
+                  const isPending = status === 'pending';
+                  const Icon = step.icon;
 
-                  {/* Icon */}
-                  <div className="absolute left-0 top-1">
-                    {log.status === 'success' && <CheckCircle size={22} className="text-emerald-500 bg-white" />}
-                    {log.status === 'running' && <Loader2 size={22} className="text-blue-500 animate-spin bg-white" />}
-                    {log.status === 'error' && <XCircle size={22} className="text-rose-500 bg-white" />}
-                    {log.status === 'pending' && <Circle size={22} className="text-gray-300 bg-white" />}
-                  </div>
+                  return (
+                    <div 
+                      key={step.id} 
+                      className={`relative flex items-center gap-5 p-5 border-2 transition-all duration-300 ${isCurrent ? 'bg-white border-teal shadow-hard-sm' : isDone ? 'bg-white border-slate opacity-60' : 'bg-cream border-slate/30 opacity-40'}`}
+                    >
+                      <div className={`w-10 h-10 flex items-center justify-center border-2 border-slate shrink-0 ${isDone ? 'bg-teal text-white' : isCurrent ? 'bg-cream text-teal animate-pulse' : 'bg-white text-slate'}`}>
+                        {isDone ? <CheckCircle size={20} /> : isCurrent ? <Loader2 size={20} className="animate-spin" /> : <step.icon size={20} />}
+                      </div>
+                      
+                      <div className="flex-1">
+                        <h4 className={`text-sm font-bold uppercase tracking-wider ${isCurrent ? 'text-teal' : 'text-slate'}`}>
+                          {step.label}
+                        </h4>
+                        
+                        {/* Live Output Snippet for Current Step */}
+                        {isCurrent && (
+                          <div className="mt-2 text-[10px] font-mono text-slate bg-cream p-2 border border-slate/20">
+                            > Processing...
+                          </div>
+                        )}
+                      </div>
 
-                  {/* Content */}
-                  <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="font-semibold text-sm text-gray-900">{log.nodeLabel}</span>
-                      <span className="text-[10px] text-gray-400 font-mono">
-                        {new Date(log.timestamp).toLocaleTimeString()}
-                      </span>
+                      {isDone && <span className="text-xs font-bold text-white bg-teal px-2 py-1 border border-slate">DONE</span>}
                     </div>
+                  );
+                })}
+              </div>
 
-                    {log.status === 'running' && (
-                      <p className="text-sm text-blue-600 italic">Thinking...</p>
-                    )}
-
-                    {log.input && (
-                      <div className="mb-2">
-                        <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Input</p>
-                        <div className="bg-gray-50 p-2 rounded text-xs text-gray-700 font-mono break-words whitespace-pre-wrap max-h-32 overflow-y-auto">
-                          {typeof log.input === 'object' ? JSON.stringify(log.input, null, 2) : log.input}
-                        </div>
+              {/* Toggle Raw Logs */}
+              <div className="mt-10 pt-6 border-t-2 border-slate/10">
+                <button 
+                  onClick={() => setShowLogs(!showLogs)}
+                  className="flex items-center gap-2 text-xs font-bold text-slate uppercase tracking-wider hover:text-teal transition-colors"
+                >
+                  {showLogs ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  System Output
+                </button>
+                
+                {showLogs && (
+                  <div className="mt-4 bg-slate text-cream p-4 font-mono text-[10px] h-48 overflow-y-auto border-2 border-slate">
+                    {logs.map((log, i) => (
+                      <div key={i} className="mb-2 border-b border-cream/10 pb-1">
+                        <span className={log.status === 'error' ? 'text-terra' : 'text-teal'}>
+                          [{new Date(log.timestamp).toLocaleTimeString()}]
+                        </span>{' '}
+                        <span className="font-bold text-white uppercase">{log.nodeLabel}</span>
+                        {log.output && typeof log.output === 'string' && (
+                           <div className="pl-4 text-cream/70 truncate mt-1">{log.output.substring(0, 100)}...</div>
+                        )}
                       </div>
-                    )}
-
-                    {log.output && (
-                      <div>
-                        <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Output</p>
-                        <div className="bg-emerald-50 border border-emerald-100 p-2 rounded text-xs text-gray-800 font-mono break-words whitespace-pre-wrap">
-                          {/* Parse for Mermaid blocks */}
-                          {typeof log.output === 'string' && log.output.includes('```mermaid') ? (
-                              <>
-                                <div className="mb-2 text-gray-500 italic">Generated Chart:</div>
-                                <MermaidDiagram code={log.output.replace(/```mermaid/g, '').replace(/```/g, '').trim()} />
-                              </>
-                          ) : (
-                              typeof log.output === 'object' ? JSON.stringify(log.output, null, 2) : log.output
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Search Grounding Display */}
-                    {log.groundingMetadata?.groundingChunks && (
-                      <div className="mt-3 pt-3 border-t border-gray-100">
-                        <div className="flex items-center gap-1.5 mb-2">
-                          <Globe size={12} className="text-blue-500" />
-                          <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Sources</span>
-                        </div>
-                        <div className="space-y-1">
-                          {log.groundingMetadata.groundingChunks.map((chunk: any, i: number) => {
-                            if (chunk.web?.uri) {
-                              return (
-                                <a 
-                                  key={i} 
-                                  href={chunk.web.uri} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-2 text-xs text-blue-600 hover:underline bg-blue-50 p-1.5 rounded"
-                                >
-                                  <ExternalLink size={10} />
-                                  <span className="truncate">{chunk.web.title || chunk.web.uri}</span>
-                                </a>
-                              );
-                            }
-                            return null;
-                          })}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {log.status === 'error' && log.output && (
-                        <div className="bg-rose-50 border border-rose-100 p-2 rounded text-xs text-rose-800 break-words">
-                            {log.output}
-                        </div>
-                    )}
+                    ))}
+                    <div ref={bottomRef} />
                   </div>
-                </div>
-              ))}
-              <div ref={bottomRef} />
+                )}
+              </div>
+
             </div>
           )}
 
           {activeTab === 'visualizer' && roadmapData && (
-            <div className="h-full p-4">
+            <div className="h-full w-full">
                <RoadmapVisualizer data={roadmapData} />
             </div>
           )}

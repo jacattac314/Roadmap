@@ -8,15 +8,54 @@
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
     <script>
       document.addEventListener('DOMContentLoaded', () => {
-        mermaid.initialize({ startOnLoad: false, theme: 'default' });
+        mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
       });
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              cream: '#EFF4DF',
+              teal: '#709E9E',
+              terra: '#CE6764',
+              slate: '#456365',
+            },
+            boxShadow: {
+              'hard': '4px 4px 0px 0px #456365',
+              'hard-sm': '2px 2px 0px 0px #456365',
+            }
+          }
+        }
+      }
     </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-      body { font-family: 'Inter', sans-serif; }
+      body { 
+        font-family: 'Inter', sans-serif; 
+        background-color: #EFF4DF;
+        color: #456365;
+      }
+      h1, h2, h3, h4, h5, h6, button {
+        font-family: 'Space Grotesk', sans-serif;
+      }
       .pattern-grid {
-        background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
-        background-size: 20px 20px;
+        background-image: radial-gradient(#709E9E 1.5px, transparent 1.5px);
+        background-size: 24px 24px;
+      }
+      /* Custom Scrollbar for the theme */
+      ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #EFF4DF; 
+        border-left: 1px solid #456365;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #709E9E; 
+        border: 1px solid #456365;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #456365; 
       }
     </style>
   <script type="importmap">
