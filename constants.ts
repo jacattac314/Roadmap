@@ -15,26 +15,40 @@ export const INITIAL_NODES: NodeData[] = [
     }
   },
   {
+    id: 'agent-audio-transcriber',
+    type: NodeType.AGENT,
+    label: 'Audio Transcriber',
+    x: 400,
+    y: 300,
+    description: 'Transcribes audio input into text for processing.',
+    config: {
+      model: 'gemini-3-flash-preview',
+      systemInstruction: 'You are an expert audio transcriber. Your goal is to accurately transcribe audio inputs. If the input is a text file or string, simply return it verbatim.',
+      prompt: 'Please transcribe the following input: {{userInput}}',
+      outputVar: 'transcribedOutput'
+    }
+  },
+  {
     id: 'agent-transcript',
     type: NodeType.AGENT,
     label: 'Transcript Processor',
-    x: 400,
+    x: 700,
     y: 300,
     description: 'Extracts structured requirements from raw input.',
     config: {
       model: 'gemini-3-flash-preview',
       systemInstruction: 'You are a product analyst. Output purely in JSON.',
-      prompt: 'Extract key information from the provided input ({{userInput}}):\n     1. List all mentioned features/requirements\n     2. Identify user pain points and needs\n     3. Extract stakeholder opinions/priorities\n     4. Summarize key business goals\n     5. Note any constraints or limitations\n     \n     Format as structured JSON with sections: features, pain_points, stakeholders, goals, constraints',
+      prompt: 'Extract key information from the provided input ({{transcribedOutput}}):\n     1. List all mentioned features/requirements\n     2. Identify user pain points and needs\n     3. Extract stakeholder opinions/priorities\n     4. Summarize key business goals\n     5. Note any constraints or limitations\n     \n     Format as structured JSON with sections: features, pain_points, stakeholders, goals, constraints',
       outputVar: 'transcriptOutput'
     }
   },
   {
     id: 'agent-feature-specs',
     type: NodeType.AGENT,
-    label: 'Feature Specifier',
-    x: 700,
+    label: 'Market Research',
+    x: 1000,
     y: 300,
-    description: 'Researches and details technical specs for features.',
+    description: 'Leverages Google Search to provide market context for roadmap features.',
     config: {
       model: 'gemini-3-flash-preview',
       useSearch: true,
@@ -47,7 +61,7 @@ export const INITIAL_NODES: NodeData[] = [
     id: 'agent-prioritizer',
     type: NodeType.AGENT,
     label: 'Requirements Prioritizer',
-    x: 1000,
+    x: 1300,
     y: 300,
     description: 'Prioritizes features using MoSCoW method.',
     config: {
@@ -61,7 +75,7 @@ export const INITIAL_NODES: NodeData[] = [
     id: 'agent-timeline',
     type: NodeType.AGENT,
     label: 'Roadmap Timeline Planner',
-    x: 1300,
+    x: 1600,
     y: 300,
     description: 'Creates a quarterly release schedule.',
     config: {
@@ -75,7 +89,7 @@ export const INITIAL_NODES: NodeData[] = [
     id: 'agent-summary',
     type: NodeType.AGENT,
     label: 'Executive Summary',
-    x: 1600,
+    x: 1900,
     y: 150,
     description: 'Generates a high-level overview for stakeholders.',
     config: {
@@ -89,7 +103,7 @@ export const INITIAL_NODES: NodeData[] = [
     id: 'agent-formatter',
     type: NodeType.AGENT,
     label: 'Roadmap Formatter',
-    x: 1600,
+    x: 1900,
     y: 450,
     description: 'Compiles the final comprehensive markdown document.',
     config: {
@@ -104,7 +118,7 @@ export const INITIAL_NODES: NodeData[] = [
     id: 'end-node',
     type: NodeType.END,
     label: 'Final Roadmap',
-    x: 1900,
+    x: 2200,
     y: 300,
     description: 'Displays the generated roadmap.',
     config: {}
@@ -112,14 +126,15 @@ export const INITIAL_NODES: NodeData[] = [
 ];
 
 export const INITIAL_EDGES: Edge[] = [
-  { id: 'e1', source: 'trigger-input', target: 'agent-transcript' },
-  { id: 'e2', source: 'agent-transcript', target: 'agent-feature-specs' },
-  { id: 'e3', source: 'agent-feature-specs', target: 'agent-prioritizer' },
-  { id: 'e4', source: 'agent-prioritizer', target: 'agent-timeline' },
-  { id: 'e5', source: 'agent-timeline', target: 'agent-summary' },
-  { id: 'e6', source: 'agent-timeline', target: 'agent-formatter' },
-  { id: 'e7', source: 'agent-summary', target: 'agent-formatter' },
-  { id: 'e8', source: 'agent-formatter', target: 'end-node' }
+  { id: 'e1', source: 'trigger-input', target: 'agent-audio-transcriber' },
+  { id: 'e2', source: 'agent-audio-transcriber', target: 'agent-transcript' },
+  { id: 'e3', source: 'agent-transcript', target: 'agent-feature-specs' },
+  { id: 'e4', source: 'agent-feature-specs', target: 'agent-prioritizer' },
+  { id: 'e5', source: 'agent-prioritizer', target: 'agent-timeline' },
+  { id: 'e6', source: 'agent-timeline', target: 'agent-summary' },
+  { id: 'e7', source: 'agent-timeline', target: 'agent-formatter' },
+  { id: 'e8', source: 'agent-summary', target: 'agent-formatter' },
+  { id: 'e9', source: 'agent-formatter', target: 'end-node' }
 ];
 
 export const MODEL_OPTIONS = [
