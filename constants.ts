@@ -67,7 +67,7 @@ export const INITIAL_NODES: NodeData[] = [
     config: {
       model: 'gemini-3-pro-preview',
       systemInstruction: 'You are a product manager expert. Output purely in JSON.',
-      prompt: 'Analyze these technical specifications ({{specsOutput}}) and:\n     1. Apply MoSCoW prioritization (Must Have, Should Have, Could Have, Won\'t Have)\n     2. Estimate effort/complexity (1-10 scale)\n     3. Identify feature dependencies\n     4. Calculate priority scores (importance × urgency)\n     5. Group by category\n     \n     Format as JSON with: must_have, should_have, could_have, wont_have, dependencies, priority_scores',
+      prompt: 'Analyze these technical specifications ({{specsOutput}}) and:\n     1. Apply MoSCoW prioritization (Must Have, Should Have, Could Have, Won\'t Have)\n     2. Estimate effort/complexity (1-10 scale)\n     3. Identify feature dependencies\n     4. Calculate priority scores (importance × urgency)\n     5. Group by category\n     \n     Format as JSON with keys: must_have, should_have, could_have, wont_have, priority_scores, and a dedicated "feature_dependencies" list detailing which features rely on others.',
       outputVar: 'prioritiesOutput'
     }
   },
@@ -105,11 +105,11 @@ export const INITIAL_NODES: NodeData[] = [
     label: 'Roadmap Formatter',
     x: 1900,
     y: 450,
-    description: 'Compiles the final comprehensive markdown document.',
+    description: 'Compiles the final markdown document and enriches it with live market context via Google Search.',
     config: {
       model: 'gemini-3-pro-preview',
       systemInstruction: 'You are a technical writer.',
-      prompt: 'Format all roadmap information into a professional document.\n\nSummary: {{summaryOutput}}\n\nTimeline: {{timelineOutput}}\n\nPriorities: {{prioritiesOutput}}\n\nStructure:\n     1. EXECUTIVE SUMMARY section\n     2. PRODUCT VISION & GOALS\n     3. QUARTERLY BREAKDOWN with features and timelines\n     4. PRIORITY MATRIX (must/should/could/won\'t)\n     5. TECHNICAL SPECS & RESEARCH (from Google Search)\n     6. SUCCESS METRICS\n     7. NOTES & ASSUMPTIONS\n     Output in markdown format suitable for stakeholder review.',
+      prompt: 'Format all roadmap information into a professional document. Additionally, use Google Search to find and incorporate the latest market context and technical implementation details for the key features listed.\n\nSummary: {{summaryOutput}}\n\nTimeline: {{timelineOutput}}\n\nPriorities: {{prioritiesOutput}}\n\nStructure:\n     1. EXECUTIVE SUMMARY section\n     2. PRODUCT VISION & GOALS\n     3. QUARTERLY BREAKDOWN with features and timelines\n     4. PRIORITY MATRIX (must/should/could/won\'t)\n     5. TECHNICAL SPECS & RESEARCH (Enrich this section with your Google Search findings regarding current market trends and tech stacks)\n     6. SUCCESS METRICS\n     7. NOTES & ASSUMPTIONS\n     Output in markdown format suitable for stakeholder review.',
       outputVar: 'finalRoadmap',
       useSearch: true
     }

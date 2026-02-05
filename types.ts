@@ -60,3 +60,24 @@ export interface GeminiResponse {
   error?: string;
   groundingMetadata?: any;
 }
+
+// --- Roadmap Visualization Types ---
+
+export type PriorityLevel = 'must_have' | 'should_have' | 'could_have' | 'wont_have';
+
+export interface RoadmapFeature {
+  id: string;
+  name: string;
+  description?: string;
+  priority: PriorityLevel;
+  quarters: number[]; // [1, 2] means Q1 and Q2
+  dependencies?: string[]; // Names of features this depends on
+  effort?: number;
+  category?: string;
+}
+
+export interface RoadmapData {
+  features: RoadmapFeature[];
+  milestones: { name: string; quarter: number }[];
+  summary: string;
+}
