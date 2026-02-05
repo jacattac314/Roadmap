@@ -11,6 +11,8 @@ interface GenerateAgentOptions {
   useSearch?: boolean;
 }
 
+const REQUEST_TIMEOUT_MS = 240000; // 4 minutes
+
 export const generateAgentResponse = async ({
   modelName,
   contents,
@@ -23,20 +25,31 @@ export const generateAgentResponse = async ({
       tools.push({ googleSearch: {} });
     }
 
+    // Create a timeout promise
+    const timeout = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds. The model took too long to respond.`));
+      }, REQUEST_TIMEOUT_MS);
+    });
+
     // Ensure we are sending valid 'contents' structure to the new SDK
     // contents here is expected to be an array of parts: [{text: '...'}, {inlineData: ...}]
     // The SDK expects contents to be: string | Part | Part[] | Content | Content[]
     // We will wrap our parts array in a Content-like structure if needed, or pass directly.
     // For this helper, we assume 'contents' is an array of Parts.
 
-    const response: GenerateContentResponse = await ai.models.generateContent({
-      model: modelName,
-      contents: { parts: contents },
-      config: {
-        systemInstruction: systemInstruction,
-        tools: tools.length > 0 ? tools : undefined,
-      },
-    });
+    // Race the API call against the timeout
+    const response = await Promise.race([
+      ai.models.generateContent({
+        model: modelName,
+        contents: { parts: contents },
+        config: {
+          systemInstruction: systemInstruction,
+          tools: tools.length > 0 ? tools : undefined,
+        },
+      }),
+      timeout
+    ]) as GenerateContentResponse;
 
     return { 
       text: response.text || "",
@@ -44,6 +57,11 @@ export const generateAgentResponse = async ({
     };
   } catch (error: any) {
     console.error("Gemini API Error:", error);
-    return { text: "", error: error.message || "Unknown error occurred" };
+    // Provide user-friendly error message for timeouts
+    let errorMessage = error.message || "Unknown error occurred";
+    if (error.name === 'AbortError' || errorMessage.includes('timed out')) {
+        errorMessage = "The request timed out. Try reducing the complexity of the prompt or using a faster model.";
+    }
+    return { text: "", error: errorMessage };
   }
 };

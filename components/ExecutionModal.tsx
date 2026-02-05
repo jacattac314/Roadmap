@@ -11,6 +11,50 @@ interface ExecutionModalProps {
   isRunning: boolean;
 }
 
+// Component to render Mermaid diagrams
+const MermaidDiagram: React.FC<{ code: string }> = ({ code }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [svg, setSvg] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const renderDiagram = async () => {
+      if (containerRef.current && (window as any).mermaid) {
+        try {
+          // Unique ID for each render to prevent conflicts
+          const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+          // Render returns an object { svg: string } in v10
+          const { svg } = await (window as any).mermaid.render(id, code);
+          setSvg(svg);
+          setError(null);
+        } catch (err: any) {
+          console.error("Mermaid rendering error:", err);
+          setError("Failed to render chart. Syntax might be invalid.");
+        }
+      }
+    };
+
+    renderDiagram();
+  }, [code]);
+
+  if (error) {
+    return (
+        <div className="text-xs text-rose-600 bg-rose-50 p-2 rounded border border-rose-100 font-mono">
+            {error}
+            <pre className="mt-1 text-[10px] text-gray-500 overflow-x-auto">{code}</pre>
+        </div>
+    );
+  }
+
+  return (
+    <div 
+      ref={containerRef} 
+      className="overflow-x-auto bg-white p-2 rounded border border-gray-100"
+      dangerouslySetInnerHTML={{ __html: svg }} 
+    />
+  );
+};
+
 export const ExecutionModal: React.FC<ExecutionModalProps> = ({ isOpen, onClose, logs, isRunning }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<'logs' | 'visualizer'>('logs');
@@ -25,7 +69,8 @@ export const ExecutionModal: React.FC<ExecutionModalProps> = ({ isOpen, onClose,
   const roadmapData = useMemo(() => {
     // We need data from Step 1 (Extract) and Step 2 (Plan) to build the full visualizer
     const extractLog = logs.find(l => l.nodeLabel === 'Extract & Prioritize' && l.status === 'success');
-    const planLog = logs.find(l => l.nodeLabel === 'Plan & Research' && l.status === 'success');
+    // Note: Match the exact label from constants.ts
+    const planLog = logs.find(l => l.nodeLabel === 'Plan & Intelligence' && l.status === 'success');
 
     if (extractLog?.output && planLog?.output) {
       return parseRoadmapData(extractLog.output, planLog.output);
@@ -133,8 +178,15 @@ export const ExecutionModal: React.FC<ExecutionModalProps> = ({ isOpen, onClose,
                       <div>
                         <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Output</p>
                         <div className="bg-emerald-50 border border-emerald-100 p-2 rounded text-xs text-gray-800 font-mono break-words whitespace-pre-wrap">
-                          {/* If it's the final output, it might be markdown. If intermediate, it might be JSON object */}
-                          {typeof log.output === 'object' ? JSON.stringify(log.output, null, 2) : log.output}
+                          {/* Parse for Mermaid blocks */}
+                          {typeof log.output === 'string' && log.output.includes('```mermaid') ? (
+                              <>
+                                <div className="mb-2 text-gray-500 italic">Generated Chart:</div>
+                                <MermaidDiagram code={log.output.replace(/```mermaid/g, '').replace(/```/g, '').trim()} />
+                              </>
+                          ) : (
+                              typeof log.output === 'object' ? JSON.stringify(log.output, null, 2) : log.output
+                          )}
                         </div>
                       </div>
                     )}
