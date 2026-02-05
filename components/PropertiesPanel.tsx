@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { NodeData, NodeType } from '../types';
 import { MODEL_OPTIONS } from '../constants';
 import { generateAgentResponse } from '../services/geminiService';
-import { X, Settings, AlignLeft, Bot, FileText, Mic, Upload, StopCircle, Globe, Sparkles, Loader2 } from 'lucide-react';
+import { X, Settings, AlignLeft, Bot, FileText, Mic, Upload, StopCircle, Globe, Sparkles, Loader2, Layout, Users, Clock, DollarSign } from 'lucide-react';
 
 interface PropertiesPanelProps {
   node: NodeData | null;
@@ -185,26 +185,92 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, 
             </h3>
 
             {/* Input Type Selection */}
-            <div className="flex p-1 bg-gray-100 rounded-lg">
+            <div className="grid grid-cols-4 p-1 bg-gray-100 rounded-lg gap-1">
+               <button
+                onClick={() => handleChange('inputType', 'structured')}
+                className={`flex items-center justify-center py-1.5 text-xs font-medium rounded-md transition-all ${node.config.inputType === 'structured' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+                title="Structured Form"
+              >
+                <Layout size={14} />
+              </button>
               <button
                 onClick={() => handleChange('inputType', 'text')}
-                className={`flex-1 flex items-center justify-center py-1.5 text-xs font-medium rounded-md transition-all ${node.config.inputType === 'text' || !node.config.inputType ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+                className={`flex items-center justify-center py-1.5 text-xs font-medium rounded-md transition-all ${node.config.inputType === 'text' || !node.config.inputType ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+                title="Raw Text"
               >
-                <AlignLeft size={14} className="mr-1" /> Text
+                <AlignLeft size={14} />
               </button>
               <button
                 onClick={() => handleChange('inputType', 'file')}
-                className={`flex-1 flex items-center justify-center py-1.5 text-xs font-medium rounded-md transition-all ${node.config.inputType === 'file' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+                className={`flex items-center justify-center py-1.5 text-xs font-medium rounded-md transition-all ${node.config.inputType === 'file' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+                title="File Upload"
               >
-                <FileText size={14} className="mr-1" /> File
+                <FileText size={14} />
               </button>
               <button
                 onClick={() => handleChange('inputType', 'audio')}
-                className={`flex-1 flex items-center justify-center py-1.5 text-xs font-medium rounded-md transition-all ${node.config.inputType === 'audio' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+                className={`flex items-center justify-center py-1.5 text-xs font-medium rounded-md transition-all ${node.config.inputType === 'audio' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+                title="Voice Input"
               >
-                <Mic size={14} className="mr-1" /> Audio
+                <Mic size={14} />
               </button>
             </div>
+
+            {/* STRUCTURED INPUT FORM */}
+            {node.config.inputType === 'structured' && (
+               <div className="space-y-3 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Product Name</label>
+                    <input
+                      type="text"
+                      value={node.config.structuredProductName || ''}
+                      onChange={(e) => handleChange('structuredProductName', e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      placeholder="e.g. FitTrack Pro"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1"><Users size={10} /> Target Persona</label>
+                    <input
+                      type="text"
+                      value={node.config.structuredPersona || ''}
+                      onChange={(e) => handleChange('structuredPersona', e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      placeholder="e.g. Busy professionals..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1"><Layout size={10} /> Key Features</label>
+                    <textarea
+                      rows={4}
+                      value={node.config.structuredFeatures || ''}
+                      onChange={(e) => handleChange('structuredFeatures', e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm font-mono"
+                      placeholder="- Feature 1..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1"><Clock size={10} /> Constraints & Timeline</label>
+                    <textarea
+                      rows={2}
+                      value={node.config.structuredConstraints || ''}
+                      onChange={(e) => handleChange('structuredConstraints', e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      placeholder="e.g. Must launch in Q2..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1"><DollarSign size={10} /> Resources</label>
+                    <input
+                      type="text"
+                      value={node.config.structuredResources || ''}
+                      onChange={(e) => handleChange('structuredResources', e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      placeholder="e.g. 5 Engineers, $50k"
+                    />
+                  </div>
+               </div>
+            )}
 
             {/* Dynamic Input Fields */}
             {(node.config.inputType === 'text' || !node.config.inputType) && (

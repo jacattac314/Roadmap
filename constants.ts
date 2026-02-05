@@ -7,10 +7,14 @@ export const INITIAL_NODES: NodeData[] = [
     label: 'Roadmap Input',
     x: 100,
     y: 300,
-    description: 'Accepts product requirements via text, file, or audio.',
+    description: 'Accepts structured product requirements.',
     config: {
-      inputType: 'text',
-      staticInput: 'Building a fitness app. Must: auth, workout tracking, stats. Should: social, leaderboards. Could: AI coaching. Timeline: Beta Q2, GA Q4. Team: 5 engineers.',
+      inputType: 'structured',
+      structuredProductName: 'FitTrack Pro',
+      structuredPersona: 'Busy professionals aged 25-40 who want data-driven workout insights',
+      structuredFeatures: '- User authentication (Social login)\n- Workout logging (Sets, Reps, Weight)\n- Progress charts (Volume, Max weight)\n- AI Coaching recommendations (Premium)\n- Leaderboards',
+      structuredConstraints: 'Must launch Beta in Q2 2024\nGA in Q4 2024\nMobile-first approach',
+      structuredResources: '5 Engineers (2 Backend, 2 Frontend, 1 Mobile)\n$50k budget for design',
       outputVar: 'userInput'
     }
   },

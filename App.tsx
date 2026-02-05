@@ -155,7 +155,34 @@ export default function App() {
         if (node.type === NodeType.TRIGGER) {
           const outputVar = node.config.outputVar || 'userInput';
           
-          if (node.config.inputType === 'file' && node.config.fileData) {
+          if (node.config.inputType === 'structured') {
+              const { 
+                  structuredProductName, 
+                  structuredPersona, 
+                  structuredFeatures, 
+                  structuredConstraints, 
+                  structuredResources 
+              } = node.config;
+
+              const textBlock = `
+PRODUCT NAME: ${structuredProductName || 'Untitled'}
+TARGET PERSONA: ${structuredPersona || 'General Audience'}
+
+KEY FEATURES:
+${structuredFeatures || 'None specified'}
+
+CONSTRAINTS & TIMELINE:
+${structuredConstraints || 'None specified'}
+
+RESOURCES:
+${structuredResources || 'None specified'}
+              `.trim();
+
+              context[outputVar] = { text: textBlock };
+              logEntry.output = textBlock;
+              logEntry.input = { structured: node.config }; // Log structured data as input
+          }
+          else if (node.config.inputType === 'file' && node.config.fileData) {
              context[outputVar] = {
                text: `[File: ${node.config.fileName}]`,
                parts: [{

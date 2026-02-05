@@ -5,9 +5,24 @@ export const parseRoadmapData = (extractedData: any, roadmapPlan: any): RoadmapD
     // Helper to clean and parse if string
     const parse = (input: any) => {
         if (typeof input === 'object') return input;
-        const match = input.match(/```json\n([\s\S]*?)\n```/) || input.match(/```json\n([\s\S]*?)$/); // Loose match
-        const clean = match ? match[1] : input.replace(/```json/g, '').replace(/```/g, '');
-        try { return JSON.parse(clean); } catch { return {}; }
+        
+        // Try standard markdown block first
+        const match = input.match(/```json\n([\s\S]*?)\n```/) || input.match(/```json\n([\s\S]*?)$/);
+        if (match) {
+            try { return JSON.parse(match[1]); } catch (e) {}
+        }
+        
+        // Fallback: finding first { and last } to handle cases where code blocks are missing
+        try {
+            const clean = input.replace(/```json/g, '').replace(/```/g, ''); // Basic cleanup
+            const firstOpen = clean.indexOf('{');
+            const lastClose = clean.lastIndexOf('}');
+            if (firstOpen !== -1 && lastClose !== -1) {
+                return JSON.parse(clean.substring(firstOpen, lastClose + 1));
+            }
+        } catch (e) {}
+
+        return {};
     };
 
     const extracted = parse(extractedData);

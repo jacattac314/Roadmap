@@ -20,12 +20,19 @@ export interface NodeData {
     outputVar?: string; // Variable name to store output
     
     // Trigger Input Config
-    inputType?: 'text' | 'file' | 'audio';
+    inputType?: 'text' | 'file' | 'audio' | 'structured';
     staticInput?: string; // Text input
     fileData?: string; // Base64
     fileName?: string;
     fileMimeType?: string;
     audioData?: string; // Base64
+    
+    // Structured Input Config
+    structuredProductName?: string;
+    structuredPersona?: string;
+    structuredFeatures?: string;
+    structuredConstraints?: string;
+    structuredResources?: string;
     
     useSearch?: boolean; // For Agent
   };
