@@ -74,6 +74,12 @@ export type PriorityLevel = 'must_have' | 'should_have' | 'could_have' | 'wont_h
 export type RiskLevel = 'low' | 'medium' | 'high';
 export type Status = 'planned' | 'in_progress' | 'completed' | 'blocked' | 'at_risk';
 
+export interface Workstream {
+  id: string;
+  name: string;
+  purpose: string; // Single sentence narrative
+}
+
 export interface RoadmapFeature {
   id: string;
   name: string;
@@ -82,15 +88,16 @@ export interface RoadmapFeature {
   quarters: number[]; // [1, 2] means Q1 and Q2
   dependencies?: string[]; // Names of features this depends on
   effort?: number;
-  category?: string;
+  workstream: string; // Name of the workstream
   
-  // New Intelligent Fields
+  // Intelligent Fields
   status: Status;
   risk: RiskLevel;
   riskReason?: string;
   team: string; // e.g., "Backend", "Frontend", "Design"
   confidence: number; // 0-100
   isCriticalPath?: boolean;
+  predictionRationale?: string; // Reasoning based on historical/simulated data
 }
 
 export interface AIInsight {
@@ -101,8 +108,9 @@ export interface AIInsight {
 }
 
 export interface RoadmapData {
+  workstreams: Workstream[];
   features: RoadmapFeature[];
   milestones: { name: string; quarter: number }[];
   summary: string;
-  insights: AIInsight[]; // New field for AI analysis
+  insights: AIInsight[];
 }

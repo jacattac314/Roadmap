@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { RoadmapData, PriorityLevel, RiskLevel, Status, AIInsight } from '../types';
-import { Download, ZoomIn, ZoomOut, Filter, Layers, AlertTriangle, Activity, Users, Zap, Brain, ChevronRight, X, ListTodo } from 'lucide-react';
+import { RoadmapData, PriorityLevel, RiskLevel, Status } from '../types';
+import { Download, ZoomIn, ZoomOut, Filter, Layers, AlertTriangle, Activity, Users, Zap, Brain, X, ListTodo, Diamond } from 'lucide-react';
 
 interface Props {
   data: RoadmapData;
@@ -8,79 +8,115 @@ interface Props {
 
 // Color Maps
 const PRIORITY_COLORS = {
-  must_have: '#EF4444',   // Red
-  should_have: '#F97316', // Orange
-  could_have: '#EAB308',  // Yellow
-  wont_have: '#22C55E'    // Green
+  must_have: '#EF4444',
+  should_have: '#F97316',
+  could_have: '#EAB308',
+  wont_have: '#22C55E'
 };
 
 const RISK_COLORS = {
-  high: '#DC2626',   // Deep Red
-  medium: '#F59E0B', // Amber
-  low: '#10B981'     // Emerald
+  high: '#DC2626',
+  medium: '#F59E0B',
+  low: '#10B981'
 };
 
 const STATUS_COLORS = {
-  planned: '#94a3b8',    // Gray
-  in_progress: '#3b82f6', // Blue
-  completed: '#10b981',   // Green
-  blocked: '#ef4444',     // Red
-  at_risk: '#f59e0b'      // Amber
+  planned: '#94a3b8',
+  in_progress: '#3b82f6',
+  completed: '#10b981',
+  blocked: '#ef4444',
+  at_risk: '#f59e0b'
 };
 
-const TEAM_COLORS: Record<string, string> = {
-  'Backend': '#3B82F6',
-  'Frontend': '#EC4899',
-  'Mobile': '#8B5CF6',
-  'Design': '#F472B6',
-  'Data': '#059669',
-  'General': '#6B7280'
+const LABELS_STATUS: Record<string, string> = {
+  planned: 'Planned',
+  in_progress: 'In Progress',
+  completed: 'Done',
+  blocked: 'Blocked',
+  at_risk: 'At Risk'
 };
 
-const LABELS: Record<PriorityLevel, string> = {
-  must_have: 'Must Have',
-  should_have: 'Should Have',
-  could_have: 'Could Have',
-  wont_have: "Won't Have"
+const CONFIDENCE_LABELS = (score: number) => {
+  if (score >= 80) return { label: 'High Confidence', color: '#10B981', text: 'HC' };
+  if (score >= 50) return { label: 'Medium Confidence', color: '#F59E0B', text: 'MC' };
+  return { label: 'Low Confidence', color: '#EF4444', text: 'LC' };
 };
 
-type ViewMode = 'priority' | 'risk' | 'team' | 'status';
+type ViewMode = 'priority' | 'risk' | 'status';
 
 export const RoadmapVisualizer: React.FC<Props> = ({ data }) => {
   const [zoom, setZoom] = useState(1);
   const [showDeps, setShowDeps] = useState(true);
   const [showCriticalPath, setShowCriticalPath] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>('priority');
+  const [viewMode, setViewMode] = useState<ViewMode>('status');
   const [showInsights, setShowInsights] = useState(false);
   
   const svgRef = useRef<SVGSVGElement>(null);
 
   // Layout Constants
   const QUARTER_WIDTH = 300 * zoom;
-  const ROW_HEIGHT = 60;
-  const HEADER_HEIGHT = 80;
-  const SIDEBAR_WIDTH = 280;
+  const HEADER_HEIGHT = 100;
+  const SIDEBAR_WIDTH = 320;
   const TOTAL_WIDTH = SIDEBAR_WIDTH + (QUARTER_WIDTH * 4);
+  
+  const WORKSTREAM_HEADER_HEIGHT = 40;
+  const FEATURE_HEIGHT = 40;
+  const FEATURE_GAP = 8;
+  const PADDING_TOP = 20;
 
-  // Sort and Filter Data
-  const sortedFeatures = useMemo(() => {
-    return [...data.features].sort((a, b) => {
-        // Sort by quarter start, then priority
-        const qDiff = Math.min(...a.quarters) - Math.min(...b.quarters);
-        if (qDiff !== 0) return qDiff;
-        const pOrder = ['must_have', 'should_have', 'could_have', 'wont_have'];
-        return pOrder.indexOf(a.priority) - pOrder.indexOf(b.priority);
+  // Process Data for Layout
+  const layoutData = useMemo(() => {
+    let currentY = HEADER_HEIGHT + PADDING_TOP;
+    
+    // Group features by workstream
+    const workstreamGroups = data.workstreams.map(ws => {
+      const features = data.features.filter(f => f.workstream === ws.name);
+      // Sort features by start quarter
+      features.sort((a, b) => Math.min(...a.quarters) - Math.min(...b.quarters));
+      
+      const startY = currentY;
+      
+      // Calculate workstream bar dimensions
+      // Workstream bar spans the min start quarter to max end quarter of its children
+      let wsMinQ = 5;
+      let wsMaxQ = 0;
+      
+      if (features.length > 0) {
+        features.forEach(f => {
+          wsMinQ = Math.min(wsMinQ, Math.min(...f.quarters));
+          wsMaxQ = Math.max(wsMaxQ, Math.max(...f.quarters));
+        });
+      } else {
+         wsMinQ = 1; wsMaxQ = 1; // Default placeholders
+      }
+
+      currentY += WORKSTREAM_HEADER_HEIGHT; // Space for the big bar title/bar
+
+      const featureNodes = features.map(f => {
+        const y = currentY;
+        currentY += FEATURE_HEIGHT + FEATURE_GAP;
+        return { ...f, y, height: FEATURE_HEIGHT };
+      });
+      
+      currentY += 20; // Padding after workstream group
+
+      return {
+        ...ws,
+        minQ: wsMinQ,
+        maxQ: wsMaxQ,
+        startY,
+        endY: currentY - 20,
+        features: featureNodes
+      };
     });
-  }, [data.features]);
 
-  const TOTAL_HEIGHT = HEADER_HEIGHT + (sortedFeatures.length * ROW_HEIGHT) + 50;
+    return { groups: workstreamGroups, totalHeight: currentY };
+  }, [data, zoom]);
 
-  // Helpers
   const getXForQuarter = (q: number) => SIDEBAR_WIDTH + ((q - 1) * QUARTER_WIDTH);
 
-  const getFeatureColor = (feature: any) => {
+  const getBarColor = (feature: any) => {
     if (viewMode === 'risk') return RISK_COLORS[feature.risk as RiskLevel] || RISK_COLORS.low;
-    if (viewMode === 'team') return TEAM_COLORS[feature.team] || TEAM_COLORS.General;
     if (viewMode === 'status') return STATUS_COLORS[feature.status as Status] || STATUS_COLORS.planned;
     return PRIORITY_COLORS[feature.priority as PriorityLevel];
   };
@@ -92,7 +128,7 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data }) => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `roadmap-${viewMode}-${new Date().toISOString().split('T')[0]}.svg`;
+    link.download = `roadmap-workstreams-${new Date().toISOString().split('T')[0]}.svg`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -135,17 +171,10 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data }) => {
                >
                  <AlertTriangle size={14} /> Risk
                </button>
-               <button 
-                 onClick={() => setViewMode('team')}
-                 className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${viewMode === 'team' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-900'}`}
-               >
-                 <Users size={14} /> Team
-               </button>
             </div>
 
             <div className="h-6 w-px bg-gray-300" />
 
-            {/* Toggles */}
             <button 
               onClick={() => setShowDeps(!showDeps)}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors border ${showDeps ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
@@ -178,18 +207,18 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data }) => {
 
         {/* Visualization Area */}
         <div className="flex-1 overflow-auto bg-gray-50 relative">
-          <div style={{ width: TOTAL_WIDTH, height: TOTAL_HEIGHT }} className="relative bg-white shadow-sm m-4">
+          <div style={{ width: TOTAL_WIDTH, height: layoutData.totalHeight }} className="relative bg-white shadow-sm m-4">
             
             <svg 
               ref={svgRef}
               width={TOTAL_WIDTH} 
-              height={TOTAL_HEIGHT} 
+              height={layoutData.totalHeight} 
               xmlns="http://www.w3.org/2000/svg"
               className="block"
             >
               <defs>
-                <pattern id="grid" width={QUARTER_WIDTH} height={ROW_HEIGHT} patternUnits="userSpaceOnUse">
-                  <path d={`M ${QUARTER_WIDTH} 0 L ${QUARTER_WIDTH} ${ROW_HEIGHT} M 0 ${ROW_HEIGHT} L ${QUARTER_WIDTH} ${ROW_HEIGHT}`} fill="none" stroke="#e2e8f0" strokeWidth="1" />
+                <pattern id="grid" width={QUARTER_WIDTH} height="20" patternUnits="userSpaceOnUse">
+                  <path d={`M ${QUARTER_WIDTH} 0 L ${QUARTER_WIDTH} 20`} fill="none" stroke="#f1f5f9" strokeWidth="1" />
                 </pattern>
                 <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
                   <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8" />
@@ -197,161 +226,214 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data }) => {
                 <marker id="arrowhead-critical" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
                   <polygon points="0 0, 10 3.5, 0 7" fill="#EF4444" />
                 </marker>
-                {/* Stripe pattern for critical path */}
-                <pattern id="diagonalHatch" width="10" height="10" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
-                    <line x1="0" y1="0" x2="0" y2="10" style={{stroke:'rgba(255,255,255,0.3)', strokeWidth:2}} />
-                </pattern>
-                {/* Blocked pattern */}
-                <pattern id="blockedStripe" width="8" height="8" patternTransform="rotate(135 0 0)" patternUnits="userSpaceOnUse">
-                    <line x1="0" y1="0" x2="0" y2="8" style={{stroke:'#EF4444', strokeWidth:4}} />
-                </pattern>
+                 <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="1" dy="2" stdDeviation="2" floodOpacity="0.1"/>
+                </filter>
               </defs>
 
-              {/* Background Grid */}
-              <rect x={SIDEBAR_WIDTH} y={HEADER_HEIGHT} width={TOTAL_WIDTH - SIDEBAR_WIDTH} height={TOTAL_HEIGHT - HEADER_HEIGHT} fill="url(#grid)" />
+              {/* Quarter Columns Background */}
+              {[1, 2, 3, 4].map((q) => (
+                <rect 
+                    key={q} 
+                    x={getXForQuarter(q)} 
+                    y={0} 
+                    width={QUARTER_WIDTH} 
+                    height={layoutData.totalHeight} 
+                    fill={q % 2 === 0 ? '#f8fafc' : '#ffffff'} 
+                />
+              ))}
 
-              {/* Header Background */}
-              <rect x="0" y="0" width={TOTAL_WIDTH} height={HEADER_HEIGHT} fill="#f8fafc" />
-              <line x1="0" y1={HEADER_HEIGHT} x2={TOTAL_WIDTH} y2={HEADER_HEIGHT} stroke="#cbd5e1" strokeWidth="1" />
-              <line x1={SIDEBAR_WIDTH} y1="0" x2={SIDEBAR_WIDTH} y2={TOTAL_HEIGHT} stroke="#cbd5e1" strokeWidth="1" />
+              {/* Vertical Grid Lines */}
+              {[1, 2, 3, 4, 5].map((q) => (
+                 <line 
+                    key={q} 
+                    x1={getXForQuarter(q)} 
+                    y1={HEADER_HEIGHT} 
+                    x2={getXForQuarter(q)} 
+                    y2={layoutData.totalHeight} 
+                    stroke="#e2e8f0" 
+                    strokeWidth="1" 
+                    strokeDasharray="4 4"
+                 />
+              ))}
 
-              {/* Quarter Headers */}
+              {/* Header Section */}
+              <rect x="0" y="0" width={TOTAL_WIDTH} height={HEADER_HEIGHT} fill="#ffffff" />
+              <line x1="0" y1={HEADER_HEIGHT} x2={TOTAL_WIDTH} y2={HEADER_HEIGHT} stroke="#cbd5e1" strokeWidth="2" />
+              <line x1={SIDEBAR_WIDTH} y1="0" x2={SIDEBAR_WIDTH} y2={layoutData.totalHeight} stroke="#cbd5e1" strokeWidth="2" />
+
+              {/* Quarter Labels */}
               {[1, 2, 3, 4].map((q) => (
                 <g key={q} transform={`translate(${getXForQuarter(q)}, 0)`}>
-                  <text x={QUARTER_WIDTH / 2} y="30" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#334155">Q{q}</text>
-                  <text x={QUARTER_WIDTH / 2} y="50" textAnchor="middle" fontSize="12" fill="#64748b">2024</text>
-                  {/* Milestones */}
+                  <text x={QUARTER_WIDTH / 2} y="35" textAnchor="middle" fontSize="18" fontWeight="800" fill="#1e293b">Q{q}</text>
+                  
+                  {/* Decision Gate (Milestone) */}
                   {data.milestones.filter(m => m.quarter === q).map((m, i) => (
-                     <g key={i} transform={`translate(${QUARTER_WIDTH / 2}, ${HEADER_HEIGHT - 10})`}>
-                       <polygon points="0,0 6,6 0,12 -6,6" fill="#8B5CF6" />
-                       <text y="-8" textAnchor="middle" fontSize="10" fill="#7c3aed" fontWeight="bold">{m.name.substring(0, 15)}...</text>
+                     <g key={i} transform={`translate(${QUARTER_WIDTH / 2}, 65)`}>
+                        {/* Diamond Shape */}
+                        <polygon points="0,-10 10,0 0,10 -10,0" fill="#7c3aed" stroke="white" strokeWidth="2" />
+                        
+                        {/* Vertical Drop Line */}
+                        <line x1="0" y1="10" x2="0" y2={layoutData.totalHeight - 65} stroke="#7c3aed" strokeWidth="1" strokeDasharray="4 4" opacity="0.4" />
+                        
+                        <text y="-18" textAnchor="middle" fontSize="11" fill="#6d28d9" fontWeight="bold" className="uppercase tracking-wide">
+                            GATE: {m.name}
+                        </text>
                      </g>
                   ))}
                 </g>
               ))}
 
-              {/* Feature Rows */}
-              {sortedFeatures.map((feature, idx) => {
-                const y = HEADER_HEIGHT + (idx * ROW_HEIGHT);
-                const centerY = y + (ROW_HEIGHT / 2);
-                const startQ = Math.min(...feature.quarters);
-                const endQ = Math.max(...feature.quarters);
-                const xStart = getXForQuarter(startQ) + 20;
-                const width = (endQ - startQ + 1) * QUARTER_WIDTH - 40;
-                const barColor = getFeatureColor(feature);
+              {/* Workstream Groups */}
+              {layoutData.groups.map((group) => {
+                 const wsStartX = getXForQuarter(group.minQ);
+                 const wsWidth = (group.maxQ - group.minQ + 1) * QUARTER_WIDTH;
 
-                return (
-                  <g key={feature.id} className="group">
-                    {/* Sidebar Label */}
-                    <g transform={`translate(20, ${centerY})`}>
-                      <text y="-5" fontSize="13" fontWeight="600" fill="#1e293b">{feature.name.substring(0, 30)}{feature.name.length > 30 ? '...' : ''}</text>
-                      
-                      {/* Secondary Label based on View Mode */}
-                      {viewMode === 'priority' && (
-                        <text y="12" fontSize="10" fill="#64748b" className="uppercase">{LABELS[feature.priority]}</text>
-                      )}
-                      {viewMode === 'risk' && (
-                         <text y="12" fontSize="10" fill={feature.risk === 'high' ? '#DC2626' : '#64748b'} className="uppercase font-bold">
-                             {feature.risk} RISK
-                         </text>
-                      )}
-                      {viewMode === 'team' && (
-                        <text y="12" fontSize="10" fill="#64748b" className="uppercase">Team: {feature.team}</text>
-                      )}
-                      {viewMode === 'status' && (
-                        <text y="12" fontSize="10" fill={STATUS_COLORS[feature.status]} className="uppercase font-medium">
-                            {feature.status.replace('_', ' ')}
-                        </text>
-                      )}
+                 return (
+                    <g key={group.id}>
+                        {/* Workstream Sidebar Header */}
+                        <g transform={`translate(20, ${group.startY + 20})`}>
+                            <text fontSize="14" fontWeight="800" fill="#334155" className="uppercase tracking-wide">{group.name}</text>
+                            <text y="20" fontSize="11" fill="#64748b" fontStyle="italic" width={SIDEBAR_WIDTH - 40}>
+                                {group.purpose.length > 40 ? group.purpose.substring(0, 40) + '...' : group.purpose}
+                            </text>
+                            <title>{group.purpose}</title>
+                        </g>
 
-                      <circle cx="-10" cy="-2" r="4" fill={barColor} />
-                    </g>
-
-                    {/* Feature Bar */}
-                    <rect 
-                      x={xStart} y={y + 15} width={width} height={ROW_HEIGHT - 30} rx="6" 
-                      fill={barColor} 
-                      opacity="0.9"
-                      stroke={showCriticalPath && feature.isCriticalPath ? '#EF4444' : 'none'}
-                      strokeWidth={showCriticalPath && feature.isCriticalPath ? 2 : 0}
-                    />
-                    
-                    {/* Critical Path Hatching */}
-                    {showCriticalPath && feature.isCriticalPath && (
-                        <rect x={xStart} y={y + 15} width={width} height={ROW_HEIGHT - 30} rx="6" fill="url(#diagonalHatch)" />
-                    )}
-                    
-                    {/* Confidence Indicator (small dot) */}
-                    <circle cx={xStart + width - 10} cy={centerY} r="3" fill="white" fillOpacity="0.5" />
-                    <text x={xStart + width - 20} y={centerY + 3} textAnchor="end" fontSize="9" fill="white" opacity="0.8">{feature.confidence}%</text>
-
-                    {/* Dependencies Lines */}
-                    {showDeps && feature.dependencies?.map(depName => {
-                      const parent = sortedFeatures.find(f => f.name.toLowerCase().includes(depName.toLowerCase()) || depName.toLowerCase().includes(f.name.toLowerCase()));
-                      if (!parent) return null;
-                      
-                      const parentIdx = sortedFeatures.indexOf(parent);
-                      const parentY = HEADER_HEIGHT + (parentIdx * ROW_HEIGHT) + (ROW_HEIGHT/2);
-                      const parentEndQ = Math.max(...parent.quarters);
-                      const parentX = getXForQuarter(parentEndQ) + ((parentEndQ - Math.min(...parent.quarters) + 1) * QUARTER_WIDTH) - 20;
-
-                      // Is this edge part of critical path?
-                      const isCritEdge = showCriticalPath && feature.isCriticalPath && parent.isCriticalPath;
-
-                      // Draw curve
-                      const path = `M ${parentX} ${parentY} C ${parentX + 50} ${parentY}, ${xStart - 50} ${centerY}, ${xStart} ${centerY}`;
-                      
-                      return (
-                        <path 
-                          key={`${parent.id}-${feature.id}`}
-                          d={path}
-                          fill="none"
-                          stroke={isCritEdge ? '#EF4444' : '#94a3b8'}
-                          strokeWidth={isCritEdge ? 2 : 1.5}
-                          strokeDasharray={isCritEdge ? '0' : '4 2'}
-                          markerEnd={isCritEdge ? "url(#arrowhead-critical)" : "url(#arrowhead)"}
+                        {/* Workstream Summary Bar (Track) */}
+                        <rect 
+                            x={getXForQuarter(1)} 
+                            y={group.startY} 
+                            width={QUARTER_WIDTH * 4} 
+                            height={group.endY - group.startY} 
+                            fill="none" 
+                            stroke="#e2e8f0" 
+                            strokeWidth="1" 
+                            rx="4"
+                            opacity="0.5"
                         />
-                      );
-                    })}
-                  </g>
-                );
+                         
+                         {/* Major Workstream Bar Visual */}
+                        <rect
+                             x={wsStartX}
+                             y={group.startY + 5}
+                             width={wsWidth}
+                             height="6"
+                             fill="#cbd5e1"
+                             rx="3"
+                        />
+
+                        {/* Features (Tasks) */}
+                        {group.features.map(feature => {
+                           const startQ = Math.min(...feature.quarters);
+                           const endQ = Math.max(...feature.quarters);
+                           const x = getXForQuarter(startQ) + 10;
+                           const width = (endQ - startQ + 1) * QUARTER_WIDTH - 20;
+                           const color = getBarColor(feature);
+                           const conf = CONFIDENCE_LABELS(feature.confidence);
+
+                           return (
+                             <g key={feature.id} className="group cursor-pointer">
+                                {/* Bar */}
+                                <rect 
+                                    x={x} 
+                                    y={feature.y} 
+                                    width={width} 
+                                    height={FEATURE_HEIGHT} 
+                                    rx="6" 
+                                    fill="white" 
+                                    stroke={color} 
+                                    strokeWidth="2"
+                                    filter="url(#shadow)"
+                                />
+                                
+                                {/* Fill Indicator (Left Border) */}
+                                <path d={`M ${x+4} ${feature.y+2} L ${x+4} ${feature.y + FEATURE_HEIGHT - 2}`} stroke={color} strokeWidth="4" strokeLinecap="round" />
+
+                                {/* Label */}
+                                <text x={x + 15} y={feature.y + 18} fontSize="12" fontWeight="600" fill="#1e293b">
+                                    {feature.name}
+                                </text>
+
+                                {/* Badges (Right Aligned) */}
+                                <g transform={`translate(${x + width - 10}, ${feature.y + FEATURE_HEIGHT / 2})`}>
+                                    {/* Confidence Badge */}
+                                    <rect x="-30" y="-8" width="24" height="16" rx="4" fill={conf.color} />
+                                    <text x="-18" y="3" textAnchor="middle" fontSize="9" fontWeight="bold" fill="white">{conf.text}</text>
+                                    
+                                    {/* Status Icon/Text */}
+                                    <text x="-36" y="4" textAnchor="end" fontSize="10" fontWeight="500" fill="#64748b" className="uppercase">
+                                        {LABELS_STATUS[feature.status]}
+                                    </text>
+                                </g>
+
+                                {/* Tooltip Logic via Title for simplicity */}
+                                <title>
+                                    {feature.name}
+                                    &#10;Status: {LABELS_STATUS[feature.status]}
+                                    &#10;Confidence: {feature.confidence}% ({feature.predictionRationale || 'Based on historic data'})
+                                    &#10;Effort: {feature.effort}/10
+                                </title>
+                             </g>
+                           );
+                        })}
+                    </g>
+                 );
               })}
+
+              {/* Dependencies Layer (On Top) */}
+              {showDeps && data.features.flatMap(feature => {
+                  const parent = data.features.find(p => feature.dependencies?.some(d => p.name.toLowerCase().includes(d.toLowerCase())));
+                  if (!parent) return [];
+                  
+                  // Need correct Y coordinates, which are inside layoutData
+                  const featureNode = layoutData.groups.flatMap(g => g.features).find(f => f.id === feature.id);
+                  const parentNode = layoutData.groups.flatMap(g => g.features).find(f => f.id === parent.id);
+                  
+                  if (!featureNode || !parentNode) return [];
+
+                  const startX = getXForQuarter(Math.max(...parent.quarters)) + ((Math.max(...parent.quarters) - Math.min(...parent.quarters) + 1) * QUARTER_WIDTH) - 10;
+                  const startY = parentNode.y + FEATURE_HEIGHT / 2;
+                  
+                  const endX = getXForQuarter(Math.min(...feature.quarters)) + 10;
+                  const endY = featureNode.y + FEATURE_HEIGHT / 2;
+
+                  const isCritical = showCriticalPath && feature.isCriticalPath && parent.isCriticalPath;
+
+                  return (
+                      <path 
+                        key={`dep-${parent.id}-${feature.id}`}
+                        d={`M ${startX} ${startY} C ${startX + 50} ${startY}, ${endX - 50} ${endY}, ${endX} ${endY}`}
+                        fill="none"
+                        stroke={isCritical ? '#EF4444' : '#94a3b8'}
+                        strokeWidth={isCritical ? 2 : 1.5}
+                        strokeDasharray={isCritical ? '0' : '4 2'}
+                        markerEnd={isCritical ? "url(#arrowhead-critical)" : "url(#arrowhead)"}
+                      />
+                  );
+              })}
+
             </svg>
           </div>
         </div>
         
         {/* Legend */}
         <div className="bg-white border-t border-gray-200 px-6 py-3 flex items-center gap-6 text-xs overflow-x-auto">
-           {viewMode === 'priority' && (
-             <>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#EF4444]"></div><span>Must Have</span></div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#F97316]"></div><span>Should Have</span></div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#EAB308]"></div><span>Could Have</span></div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#22C55E]"></div><span>Won't Have</span></div>
-             </>
-           )}
-           {viewMode === 'status' && (
-             <>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#94a3b8]"></div><span>Planned</span></div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#3b82f6]"></div><span>In Progress</span></div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#10b981]"></div><span>Completed</span></div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#ef4444]"></div><span>Blocked</span></div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#f59e0b]"></div><span>At Risk</span></div>
-             </>
-           )}
-           {viewMode === 'risk' && (
-             <>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#DC2626]"></div><span>High Risk</span></div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#F59E0B]"></div><span>Medium Risk</span></div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#10B981]"></div><span>Low Risk</span></div>
-             </>
-           )}
-           {viewMode === 'team' && Object.keys(TEAM_COLORS).map(team => (
-             <div key={team} className="flex items-center gap-2">
-               <div className="w-3 h-3 rounded-full" style={{ backgroundColor: TEAM_COLORS[team] }}></div>
-               <span>{team}</span>
+             <div className="flex items-center gap-2">
+                 <Diamond size={12} fill="#7c3aed" className="text-purple-600" />
+                 <span className="font-semibold text-purple-700">Decision Gate</span>
              </div>
-           ))}
+             
+             <div className="h-4 w-px bg-gray-300 mx-2" />
+
+             <span className="font-medium text-gray-500">Confidence:</span>
+             <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-[#10B981]"></div> HC (High)</div>
+             <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-[#F59E0B]"></div> MC (Med)</div>
+             <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-[#EF4444]"></div> LC (Low)</div>
+             
+             <div className="h-4 w-px bg-gray-300 mx-2" />
+             
+             <span className="font-medium text-gray-500">Workstreams are grouped horizontally.</span>
         </div>
       </div>
 
@@ -379,17 +461,8 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data }) => {
                  </div>
                  <h4 className="text-sm font-semibold text-gray-900 mb-1 leading-tight">{insight.title}</h4>
                  <p className="text-xs text-gray-600 leading-relaxed">{insight.description}</p>
-                 {insight.severity === 'high' && (
-                   <div className="mt-2 text-[10px] bg-rose-50 text-rose-700 px-2 py-0.5 rounded inline-block font-medium">High Severity</div>
-                 )}
               </div>
             ))}
-            
-            {data.insights.length === 0 && (
-              <div className="text-center py-8 text-gray-500 text-sm">
-                No major risks or insights detected.
-              </div>
-            )}
           </div>
         </div>
       </div>
