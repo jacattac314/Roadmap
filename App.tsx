@@ -11,6 +11,7 @@ import { Play, Share2, Layout, Download } from 'lucide-react';
 interface ContextValue {
   text?: string;
   parts?: any[];
+  data?: any; // Parsed JSON data
 }
 
 export default function App() {
@@ -30,12 +31,39 @@ export default function App() {
     setNodes(nodes.map(n => n.id === updatedNode.id ? updatedNode : n));
   };
 
-  // Resolves variable strings like "{{var}}" using the context
-  // Returns string for text display
+  // Helper to safely access nested properties using dot notation
+  const getNestedValue = (obj: any, path: string): any => {
+    return path.split('.').reduce((prev, curr) => {
+      return prev ? prev[curr] : undefined;
+    }, obj);
+  };
+
+  // Resolves variable strings like "{{var}}" or "{{obj.prop}}" using the context
   const interpolateVariablesText = (text: string, context: Record<string, ContextValue>) => {
+    const today = new Date().toLocaleDateString();
+    
     return text.replace(/{{([^}]+)}}/g, (_, key) => {
-      const val = context[key.trim()];
-      return val?.text || `[Missing: ${key}]`;
+      const trimmedKey = key.trim();
+      
+      if (trimmedKey === 'today') return today;
+
+      // Handle dot notation (e.g. extractedData.product_name)
+      if (trimmedKey.includes('.')) {
+        const [rootVar, ...path] = trimmedKey.split('.');
+        const contextVal = context[rootVar];
+        if (contextVal?.data) {
+          const val = getNestedValue(contextVal.data, path.join('.'));
+          if (val !== undefined) {
+             if (typeof val === 'object') return JSON.stringify(val);
+             return String(val);
+          }
+        }
+      }
+
+      const val = context[trimmedKey];
+      // If the variable points to a JSON object (from a previous node), stringify it for the prompt
+      if (val?.data) return JSON.stringify(val.data);
+      return val?.text || `[Missing: ${trimmedKey}]`;
     });
   };
 
@@ -44,15 +72,25 @@ export default function App() {
     const parts: any[] = [];
     
     // Check if the prompt references a variable that has media parts
-    let hasMedia = false;
+    const interpolatedText = interpolateVariablesText(promptTemplate, context);
     
-    const interpolatedText = promptTemplate.replace(/{{([^}]+)}}/g, (_, key) => {
-      const val = context[key.trim()];
-      if (val?.parts && val.parts.length > 0) {
-        hasMedia = true;
-        parts.push(...val.parts);
-      }
-      return val?.text || '';
+    // Scan for media variables to attach (simple implementation: if var is referenced and has parts, add them)
+    // Note: The text is already interpolated, so we just check context for file attachments
+    // that might have been referenced or imply attachment.
+    // For this simple implementation, if a node inputs a file, we usually want it in context.
+    // But since we use text interpolation, we only look for file parts if explicitly needed or 
+    // if the prompt is simple.
+    // Enhanced: Check if top-level keys used in prompt have parts.
+    
+    // However, simplest way for Gemini is to append media parts if they exist in the variables referenced.
+    // We'll stick to text-first for this optimization unless we detect specific file inputs.
+    // Since we simplified variables to text/data, we just send the text prompt.
+    // If we need media, we'd need to check if 'userInput' was referenced and had parts.
+    
+    Object.keys(context).forEach(key => {
+        if (promptTemplate.includes(`{{${key}}}`) && context[key].parts) {
+            parts.push(...context[key].parts!);
+        }
     });
 
     parts.push({ text: interpolatedText });
@@ -97,8 +135,6 @@ export default function App() {
     }
 
     if (executionOrder.length === 0 && nodes.length > 0) {
-       // Fallback for cycles or disconnected graphs, though simple disconnected components are handled.
-       // Only cycles cause issues here. We'll just execute in array order as fallback.
        executionOrder.push(...nodes);
     }
 
@@ -173,9 +209,32 @@ export default function App() {
           }
 
           const outVar = node.config.outputVar || 'agentOutput';
-          context[outVar] = { text: result.text };
           
-          logEntry.output = result.text;
+          // Attempt to parse JSON to support structured variable access (e.g. {{extractedData.vision}})
+          let parsedData = null;
+          try {
+             const cleanText = result.text.replace(/```json\n|\n```/g, '').replace(/```/g, '').trim();
+             // Find first { and last } to handle preamble text if any (though prompt says ONLY JSON)
+             const firstBrace = cleanText.indexOf('{');
+             const lastBrace = cleanText.lastIndexOf('}');
+             if (firstBrace !== -1 && lastBrace !== -1) {
+                parsedData = JSON.parse(cleanText.substring(firstBrace, lastBrace + 1));
+             }
+          } catch (e) {
+             // Ignore parsing error, treat as text
+          }
+
+          context[outVar] = { 
+              text: result.text,
+              data: parsedData 
+          };
+          
+          logEntry.output = result.text; // Store raw text for logs
+          if (parsedData) {
+             // We can also store the parsed object in the log for better visualization later if needed
+             logEntry.output = parsedData;
+          }
+          
           logEntry.status = 'success';
           if (result.groundingMetadata) {
              logEntry.groundingMetadata = result.groundingMetadata;
@@ -183,10 +242,12 @@ export default function App() {
         }
         else if (node.type === NodeType.END) {
           // Find the last agent output for a cleaner display
-          const lastAgentOutput = Object.values(context).pop()?.text;
+          const keys = Object.keys(context);
+          const lastKey = keys[keys.length - 1];
+          const lastVal = context[lastKey];
           
           logEntry.input = "Aggregating results...";
-          logEntry.output = lastAgentOutput || "Workflow Completed";
+          logEntry.output = lastVal?.text || lastVal?.data || "Workflow Completed";
           logEntry.status = 'success';
         }
 

@@ -10,131 +10,69 @@ export const INITIAL_NODES: NodeData[] = [
     description: 'Accepts product requirements via text, file, or audio.',
     config: {
       inputType: 'text',
-      staticInput: '---\ntype: "feature"\ntitle: "Gemini intelligence in your app"\nicon: "spark"\n---\n\nYou MUST add Gemini to the app where relevant to complete all sorts of tasks - analyze content, make edits, and more. These are suggested ideas. Use Pro for complex tasks and Flash or Flash-Lite for tasks that should happen fast.\n\n---\ntype: "feature"\ntitle: "Transcribe audio"\nicon: "speech_to_text"\n---\n\nAdd a feature where users can input audio with their microphone and the app with transcribe it. You MUST add audio transcription to the app using model gemini-3-flash-preview\n\n---\ntype: "feature"\ntitle: "Use Google Search data"\nicon: "google"\n---\n\nYou MUST add Search Grounding to the app where relevant to get up to date and accurate information. Use gemini-3-flash-preview (with googleSearch tool)',
+      staticInput: 'Building a fitness app. Must: auth, workout tracking, stats. Should: social, leaderboards. Could: AI coaching. Timeline: Beta Q2, GA Q4. Team: 5 engineers.',
       outputVar: 'userInput'
     }
   },
   {
-    id: 'agent-audio-transcriber',
+    id: 'agent-extract',
     type: NodeType.AGENT,
-    label: 'Audio Transcriber',
-    x: 400,
+    label: 'Extract & Prioritize',
+    x: 600,
     y: 300,
-    description: 'Transcribes audio input into text for processing.',
+    description: 'Extracts requirements and priorities (Flash)',
     config: {
       model: 'gemini-3-flash-preview',
-      systemInstruction: 'You are an expert audio transcriber. Your goal is to accurately transcribe audio inputs. If the input is a text file or string, simply return it verbatim.',
-      prompt: 'Please transcribe the following input: {{userInput}}',
-      outputVar: 'transcribedOutput'
+      systemInstruction: 'You are a product requirements analyst. Output ONLY valid JSON, no other text.',
+      prompt: 'Analyze this product requirement and output ONLY this JSON structure (no markdown, no explanation):\n\n{\n  "product_name": "string - extracted from input",\n  "vision": "string - max 100 words",\n  "raw_requirements": "string - consolidated list of all mentioned features",\n  "features": [\n    {\n      "id": "feature_1",\n      "name": "string",\n      "description": "string - max 50 words",\n      "priority": "must_have|should_have|could_have|wont_have",\n      "estimated_effort": 1-10,\n      "dependencies": ["feature_name_reference"]\n    }\n  ],\n  "must_have_count": 0,\n  "should_have_count": 0,\n  "could_have_count": 0,\n  "team_size": 0,\n  "timeline_months": 12,\n  "key_constraints": ["string"]\n}\n\nInput: {{userInput}}',
+      outputVar: 'extractedData'
     }
   },
   {
-    id: 'agent-transcript',
+    id: 'agent-plan',
     type: NodeType.AGENT,
-    label: 'Transcript Processor',
-    x: 700,
+    label: 'Plan & Intelligence',
+    x: 1100,
     y: 300,
-    description: 'Extracts structured requirements from raw input.',
-    config: {
-      model: 'gemini-3-flash-preview',
-      systemInstruction: 'You are a product analyst. Output purely in JSON.',
-      prompt: 'Extract key information from the provided input ({{transcribedOutput}}):\n     1. List all mentioned features/requirements\n     2. Identify user pain points and needs\n     3. Extract stakeholder opinions/priorities\n     4. Summarize key business goals\n     5. Note any constraints or limitations\n     \n     Format as structured JSON with sections: features, pain_points, stakeholders, goals, constraints',
-      outputVar: 'transcriptOutput'
-    }
-  },
-  {
-    id: 'agent-feature-specs',
-    type: NodeType.AGENT,
-    label: 'Market Research',
-    x: 1000,
-    y: 300,
-    description: 'Leverages Google Search to provide market context for roadmap features.',
+    description: 'Creates quarterly plan, risk analysis, and resource mapping (Flash)',
     config: {
       model: 'gemini-3-flash-preview',
       useSearch: true,
-      systemInstruction: 'You are a technical product owner. Output purely in JSON.',
-      prompt: 'Take the features identified here ({{transcriptOutput}}) and expand them into technical specifications.\n\n1. Use Google Search to find best practices for implementing these specific Gemini features (Audio, Search, Intelligence).\n2. Define acceptance criteria for each.\n3. Suggest specific API endpoints or model names where relevant.\n\nFormat as JSON with key "detailed_specs" containing a list of feature objects.',
-      outputVar: 'specsOutput'
+      systemInstruction: 'You are a senior technical program manager. Output ONLY valid JSON.',
+      prompt: 'Create a detailed quarterly roadmap with intelligent analysis. Output ONLY this JSON:\n\n{\n  "strategy": "string - max 150 words",\n  "quarterly_breakdown": {\n    "Q1": { "features": ["feature names"], "narrative": "string", "milestone": "string" },\n    "Q2": { "features": ["feature names"], "narrative": "string", "milestone": "string" },\n    "Q3": { "features": ["feature names"], "narrative": "string", "milestone": "string" },\n    "Q4": { "features": ["feature names"], "narrative": "string", "milestone": "string" }\n  },\n  "feature_metadata": [\n    {\n      "name": "feature_name_must_match_exactly",\n      "risk_level": "low|medium|high",\n      "risk_reason": "why is this risky?",\n      "assigned_team": "Backend|Frontend|Mobile|Design|Data",\n      "confidence_score": 80,\n      "is_critical_path": true,\n      "status": "planned|in_progress|completed|blocked|at_risk"\n    }\n  ],\n  "ai_insights": [\n    {\n      "type": "risk|bottleneck|resource",\n      "title": "short title",\n      "description": "detailed insight",\n      "severity": "high|medium|low"\n    }\n  ],\n  "visualization_data": {\n    "milestones": [\n      {"quarter": 2, "name": "string", "type": "beta|launch|release"}\n    ]\n  }\n}\n\nPredict status based on constraints (e.g. mark aggressive Q1 items as at_risk).\n\nBased on: {{extractedData}}',
+      outputVar: 'roadmapPlan'
     }
   },
   {
-    id: 'agent-prioritizer',
+    id: 'agent-polish',
     type: NodeType.AGENT,
-    label: 'Requirements Prioritizer',
-    x: 1300,
-    y: 300,
-    description: 'Prioritizes features using MoSCoW method.',
-    config: {
-      model: 'gemini-3-pro-preview',
-      systemInstruction: 'You are a product manager expert. Output purely in JSON.',
-      prompt: 'Analyze these technical specifications ({{specsOutput}}) and:\n     1. Apply MoSCoW prioritization (Must Have, Should Have, Could Have, Won\'t Have)\n     2. Estimate effort/complexity (1-10 scale)\n     3. Identify feature dependencies\n     4. Calculate priority scores (importance × urgency)\n     5. Group by category\n     \n     Format as JSON with keys: must_have, should_have, could_have, wont_have, priority_scores, and a dedicated "feature_dependencies" list detailing which features rely on others.',
-      outputVar: 'prioritiesOutput'
-    }
-  },
-  {
-    id: 'agent-timeline',
-    type: NodeType.AGENT,
-    label: 'Roadmap Timeline Planner',
+    label: 'Polish & Export',
     x: 1600,
     y: 300,
-    description: 'Creates a quarterly release schedule.',
+    description: 'Generates professional markdown report (Pro)',
     config: {
       model: 'gemini-3-pro-preview',
-      systemInstruction: 'You are a strategic product planner. Output purely in JSON.',
-      prompt: 'Using these priorities ({{prioritiesOutput}}), create a 12-month roadmap:\n     1. Divide features into quarterly phases (Q1, Q2, Q3, Q4)\n     2. Consider dependencies and release sequence\n     3. Balance priorities with team capacity\n     4. Include milestones and key dates\n     5. Create brief narrative for each quarter\n     \n     Format as JSON with: q1_features, q1_narrative, q2_features, q2_narrative, q3_features, q3_narrative, q4_features, q4_narrative, high_level_strategy',
-      outputVar: 'timelineOutput'
-    }
-  },
-  {
-    id: 'agent-summary',
-    type: NodeType.AGENT,
-    label: 'Executive Summary',
-    x: 1900,
-    y: 150,
-    description: 'Generates a high-level overview for stakeholders.',
-    config: {
-      model: 'gemini-3-pro-preview',
-      systemInstruction: 'You are a professional product communicator.',
-      prompt: 'Create a 200-word executive summary based on the strategy ({{timelineOutput}}) that includes:\n     1. Product vision statement\n     2. Key business objectives\n     3. Top 5 features planned\n     4. Timeline overview\n     5. Success metrics\n     Make it professional and persuasive.',
-      outputVar: 'summaryOutput'
-    }
-  },
-  {
-    id: 'agent-formatter',
-    type: NodeType.AGENT,
-    label: 'Roadmap Formatter',
-    x: 1900,
-    y: 450,
-    description: 'Compiles the final markdown document and enriches it with live market context via Google Search.',
-    config: {
-      model: 'gemini-3-pro-preview',
-      systemInstruction: 'You are a technical writer.',
-      prompt: 'Format all roadmap information into a professional document. Additionally, use Google Search to find and incorporate the latest market context and technical implementation details for the key features listed.\n\nSummary: {{summaryOutput}}\n\nTimeline: {{timelineOutput}}\n\nPriorities: {{prioritiesOutput}}\n\nStructure:\n     1. EXECUTIVE SUMMARY section\n     2. PRODUCT VISION & GOALS\n     3. QUARTERLY BREAKDOWN with features and timelines\n     4. PRIORITY MATRIX (must/should/could/won\'t)\n     5. TECHNICAL SPECS & RESEARCH (Enrich this section with your Google Search findings regarding current market trends and tech stacks)\n     6. SUCCESS METRICS\n     7. NOTES & ASSUMPTIONS\n     Output in markdown format suitable for stakeholder review.',
-      outputVar: 'finalRoadmap',
-      useSearch: true
+      systemInstruction: 'You are a technical product writer. Create professional, concise output.',
+      prompt: 'Create a professional roadmap document. Output markdown:\n\n# {{extractedData.product_name}} - 12 Month Product Roadmap\n\n## Executive Summary\n{{extractedData.vision}}\n\n## Strategic Vision\n{{roadmapPlan.strategy}}\n\n## AI Risk & Resource Analysis\n**Top Risks:**\n- ... (Extract high risks from roadmapPlan.ai_insights)\n\n**Critical Path Items:**\n- ... (List critical path items from roadmapPlan.feature_metadata)\n\n## Quarterly Breakdown\n\n### Q1: {{roadmapPlan.quarterly_breakdown.Q1.milestone}}\n{{roadmapPlan.quarterly_breakdown.Q1.narrative}}\n**Features:** {{roadmapPlan.quarterly_breakdown.Q1.features}}\n\n### Q2: {{roadmapPlan.quarterly_breakdown.Q2.milestone}}\n{{roadmapPlan.quarterly_breakdown.Q2.narrative}}\n**Features:** {{roadmapPlan.quarterly_breakdown.Q2.features}}\n\n### Q3: {{roadmapPlan.quarterly_breakdown.Q3.milestone}}\n{{roadmapPlan.quarterly_breakdown.Q3.narrative}}\n**Features:** {{roadmapPlan.quarterly_breakdown.Q3.features}}\n\n### Q4: {{roadmapPlan.quarterly_breakdown.Q4.milestone}}\n{{roadmapPlan.quarterly_breakdown.Q4.narrative}}\n**Features:** {{roadmapPlan.quarterly_breakdown.Q4.features}}\n\n## Generated\nDate: {{today}}\nBased on: {{extractedData.product_name}}',
+      outputVar: 'finalRoadmap'
     }
   },
   {
     id: 'end-node',
     type: NodeType.END,
     label: 'Final Roadmap',
-    x: 2200,
+    x: 2000,
     y: 300,
-    description: 'Displays the generated roadmap.',
+    description: 'Displays formatted roadmap and visual chart',
     config: {}
   }
 ];
 
 export const INITIAL_EDGES: Edge[] = [
-  { id: 'e1', source: 'trigger-input', target: 'agent-audio-transcriber' },
-  { id: 'e2', source: 'agent-audio-transcriber', target: 'agent-transcript' },
-  { id: 'e3', source: 'agent-transcript', target: 'agent-feature-specs' },
-  { id: 'e4', source: 'agent-feature-specs', target: 'agent-prioritizer' },
-  { id: 'e5', source: 'agent-prioritizer', target: 'agent-timeline' },
-  { id: 'e6', source: 'agent-timeline', target: 'agent-summary' },
-  { id: 'e7', source: 'agent-timeline', target: 'agent-formatter' },
-  { id: 'e8', source: 'agent-summary', target: 'agent-formatter' },
-  { id: 'e9', source: 'agent-formatter', target: 'end-node' }
+  { id: 'e1', source: 'trigger-input', target: 'agent-extract' },
+  { id: 'e2', source: 'agent-extract', target: 'agent-plan' },
+  { id: 'e3', source: 'agent-plan', target: 'agent-polish' },
+  { id: 'e4', source: 'agent-polish', target: 'end-node' }
 ];
 
 export const MODEL_OPTIONS = [

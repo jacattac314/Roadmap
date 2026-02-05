@@ -23,11 +23,12 @@ export const ExecutionModal: React.FC<ExecutionModalProps> = ({ isOpen, onClose,
 
   // Determine if we have enough data to show the roadmap
   const roadmapData = useMemo(() => {
-    const prioritiesLog = logs.find(l => l.nodeLabel === 'Requirements Prioritizer' && l.status === 'success');
-    const timelineLog = logs.find(l => l.nodeLabel === 'Roadmap Timeline Planner' && l.status === 'success');
+    // We need data from Step 1 (Extract) and Step 2 (Plan) to build the full visualizer
+    const extractLog = logs.find(l => l.nodeLabel === 'Extract & Prioritize' && l.status === 'success');
+    const planLog = logs.find(l => l.nodeLabel === 'Plan & Research' && l.status === 'success');
 
-    if (prioritiesLog?.output && timelineLog?.output) {
-      return parseRoadmapData(prioritiesLog.output, timelineLog.output);
+    if (extractLog?.output && planLog?.output) {
+      return parseRoadmapData(extractLog.output, planLog.output);
     }
     return null;
   }, [logs]);
@@ -132,6 +133,7 @@ export const ExecutionModal: React.FC<ExecutionModalProps> = ({ isOpen, onClose,
                       <div>
                         <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Output</p>
                         <div className="bg-emerald-50 border border-emerald-100 p-2 rounded text-xs text-gray-800 font-mono break-words whitespace-pre-wrap">
+                          {/* If it's the final output, it might be markdown. If intermediate, it might be JSON object */}
                           {typeof log.output === 'object' ? JSON.stringify(log.output, null, 2) : log.output}
                         </div>
                       </div>

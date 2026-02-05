@@ -64,6 +64,8 @@ export interface GeminiResponse {
 // --- Roadmap Visualization Types ---
 
 export type PriorityLevel = 'must_have' | 'should_have' | 'could_have' | 'wont_have';
+export type RiskLevel = 'low' | 'medium' | 'high';
+export type Status = 'planned' | 'in_progress' | 'completed' | 'blocked' | 'at_risk';
 
 export interface RoadmapFeature {
   id: string;
@@ -74,10 +76,26 @@ export interface RoadmapFeature {
   dependencies?: string[]; // Names of features this depends on
   effort?: number;
   category?: string;
+  
+  // New Intelligent Fields
+  status: Status;
+  risk: RiskLevel;
+  riskReason?: string;
+  team: string; // e.g., "Backend", "Frontend", "Design"
+  confidence: number; // 0-100
+  isCriticalPath?: boolean;
+}
+
+export interface AIInsight {
+  type: 'risk' | 'bottleneck' | 'resource' | 'suggestion';
+  title: string;
+  description: string;
+  severity: 'low' | 'medium' | 'high';
 }
 
 export interface RoadmapData {
   features: RoadmapFeature[];
   milestones: { name: string; quarter: number }[];
   summary: string;
+  insights: AIInsight[]; // New field for AI analysis
 }
