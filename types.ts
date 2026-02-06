@@ -1,8 +1,29 @@
+
 export enum NodeType {
   TRIGGER = 'TRIGGER',
   AGENT = 'AGENT',
   TOOL = 'TOOL',
   END = 'END'
+}
+
+export interface NodeSubtask {
+  id: string;
+  text: string;
+  isCompleted: boolean;
+  assignee?: string;
+  dueDate?: string;
+  convertedNodeId?: string;
+}
+
+export interface MeetingArtifact {
+  id: string;
+  timestamp: number;
+  title: string;
+  duration: string;
+  transcript: string;
+  summary: string;
+  decisions: string[];
+  actionItems: string[];
 }
 
 export interface NodeData {
@@ -18,6 +39,12 @@ export interface NodeData {
     systemInstruction?: string; // For Agent
     model?: string; // For Agent
     outputVar?: string; // Variable name to store output
+    
+    // Content & Analysis Config (Expanded Node View)
+    summary?: string;
+    subtasks?: NodeSubtask[];
+    contentUrls?: string[];
+    meetings?: MeetingArtifact[];
     
     // Trigger Input Config
     inputType?: 'text' | 'file' | 'audio' | 'structured';

@@ -10,11 +10,11 @@ export const INITIAL_NODES: NodeData[] = [
     description: 'Accepts structured product requirements.',
     config: {
       inputType: 'structured',
-      structuredProductName: 'FitTrack Pro',
-      structuredPersona: 'Busy professionals aged 25-40 who want data-driven workout insights',
-      structuredFeatures: '- User authentication (Social login)\n- Workout logging (Sets, Reps, Weight)\n- Progress charts (Volume, Max weight)\n- AI Coaching recommendations (Premium)\n- Leaderboards',
-      structuredConstraints: 'Must launch Beta in Q2 2024\nGA in Q4 2024\nMobile-first approach',
-      structuredResources: '5 Engineers (2 Backend, 2 Frontend, 1 Mobile)\n$50k budget for design',
+      structuredProductName: 'Mars Sample Retrieval System',
+      structuredPersona: 'Mars Exploration Program Mission Control & Planetary Scientists',
+      structuredFeatures: '- Autonomous Navigation (15-min delay handling, obstacle detection)\n- Deep Drilling System (2 meters depth, 5 sample types)\n- Sterile Sample Storage (99.99% sterility assurance)\n- Science Payload (Spectroscopy, thermal imaging, gas analysis)\n- Power Management (Solar + thermal battery for 2-week missions)\n- Remote Diagnostics (Real-time health monitoring)',
+      structuredConstraints: 'Max 50kg payload weight\nWithstand -120°C, dust storms, radiation\n15-minute communication latency\nQ4 Deadline for Field Testing',
+      structuredResources: 'Mars Analog Sites (Chile, Arizona)\nEnvironmental Test Chambers\nPrototyping Lab & Assembly Team',
       outputVar: 'userInput'
     }
   },

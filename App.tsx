@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { NodeData, Edge, NodeType, ExecutionLog } from './types';
 import { INITIAL_NODES, INITIAL_EDGES } from './constants';
@@ -29,6 +30,35 @@ export default function App() {
 
   const handleNodeUpdate = (updatedNode: NodeData) => {
     setNodes(nodes.map(n => n.id === updatedNode.id ? updatedNode : n));
+  };
+
+  const handleCreateChildNode = (parentId: string, label: string) => {
+    const parent = nodes.find(n => n.id === parentId);
+    if (!parent) return null;
+
+    const newNodeId = `node-${Date.now()}`;
+    const newNode: NodeData = {
+      id: newNodeId,
+      type: NodeType.AGENT,
+      label: label.substring(0, 30) + (label.length > 30 ? '...' : ''),
+      x: parent.x + 300,
+      y: parent.y,
+      description: label,
+      config: {
+        model: 'gemini-3-flash-preview'
+      }
+    };
+
+    const newEdge: Edge = {
+      id: `edge-${Date.now()}`,
+      source: parentId,
+      target: newNodeId
+    };
+
+    setNodes(prev => [...prev, newNode]);
+    setEdges(prev => [...prev, newEdge]);
+    
+    return newNodeId;
   };
 
   // Helper to safely access nested properties using dot notation
@@ -194,8 +224,16 @@ ${structuredResources || 'None specified'}
              logEntry.output = "Audio recording loaded.";
           } 
           else {
-            // Default Text
-            const val = node.config.staticInput || "No input provided";
+            // Default Text + URL Context + Summary
+            let val = node.config.staticInput || "";
+            if (node.config.summary) {
+              val += `\n\n[CONTEXT SUMMARY]: ${node.config.summary}`;
+            }
+            if (node.config.contentUrls?.length) {
+              val += `\n\n[REFERENCED URLS]: ${node.config.contentUrls.join(', ')}`;
+            }
+            if (!val) val = "No input provided";
+
             context[outputVar] = { text: val };
             logEntry.output = val;
           }
@@ -363,6 +401,7 @@ ${structuredResources || 'None specified'}
           isOpen={!!selectedNode}
           onClose={() => setSelectedNodeId(null)}
           onUpdate={handleNodeUpdate}
+          onCreateNode={handleCreateChildNode}
         />
       </div>
 
