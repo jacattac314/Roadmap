@@ -6,12 +6,13 @@ import { Play, Bot, Wrench, Flag, MoreHorizontal, Clock, CheckCircle2, AlertCirc
 interface NodeProps {
   data: NodeData;
   isSelected: boolean;
+  isRecording?: boolean;
   onMouseDown: (e: React.MouseEvent, id: string) => void;
   onClick: (id: string) => void;
   onStartMeeting: (id: string) => void;
 }
 
-export const Node: React.FC<NodeProps> = ({ data, isSelected, onMouseDown, onClick, onStartMeeting }) => {
+export const Node: React.FC<NodeProps> = ({ data, isSelected, isRecording, onMouseDown, onClick, onStartMeeting }) => {
   const getIcon = () => {
     switch (data.type) {
       case NodeType.TRIGGER: return <Play size={16} />;
@@ -48,6 +49,7 @@ export const Node: React.FC<NodeProps> = ({ data, isSelected, onMouseDown, onCli
     <div
       className={`absolute w-64 bg-white border-2 border-slate transition-all group
         ${isSelected ? 'shadow-[8px_8px_0px_0px_#CE6764] -translate-y-1' : 'shadow-hard hover:shadow-[6px_6px_0px_0px_#456365]'}
+        ${isRecording ? 'ring-4 ring-rose-500/20 border-rose-500' : ''}
         cursor-grab active:cursor-grabbing flex flex-col
       `}
       style={{
@@ -62,21 +64,24 @@ export const Node: React.FC<NodeProps> = ({ data, isSelected, onMouseDown, onCli
       }}
     >
       {/* Header */}
-      <div className={`px-4 py-3 border-b-2 border-slate flex items-center justify-between ${styles.header}`}>
+      <div className={`px-4 py-3 border-b-2 border-slate flex items-center justify-between ${styles.header} ${isRecording ? 'bg-rose-500 text-white' : ''}`}>
         <div className="flex items-center gap-3">
           <div className="p-1 border border-current rounded-sm">
             {getIcon()}
           </div>
           <div>
             <h3 className="text-sm font-bold uppercase tracking-wide leading-none mb-1 truncate max-w-[120px]">{data.label}</h3>
-            <p className="text-[9px] opacity-80 uppercase tracking-widest">{data.type}</p>
+            <p className="text-[9px] opacity-80 uppercase tracking-widest">{isRecording ? 'Recording...' : data.type}</p>
           </div>
         </div>
-        {data.config.status && (
+        {data.config.status && !isRecording && (
           <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-white/10 border border-white/20 text-[8px] font-black uppercase tracking-widest">
             {getStatusIcon()}
             {data.config.status.replace('_', ' ')}
           </div>
+        )}
+        {isRecording && (
+           <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
         )}
       </div>
 
@@ -110,11 +115,11 @@ export const Node: React.FC<NodeProps> = ({ data, isSelected, onMouseDown, onCli
          </div>
          <button 
            onClick={(e) => { e.stopPropagation(); onStartMeeting(data.id); }}
-           className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-teal hover:text-white text-slate transition-colors"
+           className={`flex items-center gap-1.5 px-2 py-1 rounded transition-colors ${isRecording ? 'bg-rose-500 text-white animate-pulse' : 'hover:bg-teal hover:text-white text-slate'}`}
            title="Launch Meeting"
          >
-            <Mic size={12} />
-            <span className="text-[9px] font-black uppercase tracking-widest">Meet</span>
+            {isRecording ? <div className="w-2 h-2 bg-white rounded-full" /> : <Mic size={12} />}
+            <span className="text-[9px] font-black uppercase tracking-widest">{isRecording ? 'REC' : 'Meet'}</span>
          </button>
       </div>
 

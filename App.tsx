@@ -32,6 +32,7 @@ export default function App() {
   
   // Workflow Editor State
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [recordingNodeId, setRecordingNodeId] = useState<string | null>(null);
   const [panelTab, setPanelTab] = useState<'details' | 'content' | 'meetings' | undefined>(undefined);
   
   // State for the editable roadmap data
@@ -266,12 +267,51 @@ export default function App() {
     setNodes(prev => prev.map(n => n.id === updated.id ? updated : n));
   };
 
+  const handleCreateNode = (parentId: string, label: string) => {
+    const parentNode = nodes.find(n => n.id === parentId);
+    if (!parentNode) return null;
+
+    const newNodeId = `node-${Date.now()}`;
+    const newNode: NodeData = {
+      id: newNodeId,
+      type: NodeType.AGENT,
+      label: label.length > 25 ? label.substring(0, 25) + '...' : label,
+      x: parentNode.x + 350,
+      y: parentNode.y + (Math.random() * 200 - 100),
+      description: `Subtask extracted from ${parentNode.label}: ${label}`,
+      config: {
+        status: 'planned',
+        model: 'gemini-3-flash-preview',
+        prompt: `Execute subtask: ${label}\nContext from parent: ${parentNode.config.prompt || ''}`
+      }
+    };
+
+    const newEdge: Edge = {
+      id: `edge-${Date.now()}`,
+      source: parentId,
+      target: newNodeId
+    };
+
+    setNodes(prev => [...prev, newNode]);
+    setEdges(prev => [...prev, newEdge]);
+    
+    return newNodeId;
+  };
+
   const handleStartMeeting = (nodeId: string) => {
      setSelectedNodeId(nodeId);
      setPanelTab('meetings');
      // Ensure we are in workflow view if not already
      if (resultMode !== 'workflow') {
         setResultMode('workflow');
+     }
+  };
+  
+  const handleRecordingStateChange = (isRecording: boolean) => {
+     if (isRecording) {
+        setRecordingNodeId(selectedNodeId);
+     } else {
+        setRecordingNodeId(null);
      }
   };
 
@@ -419,6 +459,7 @@ export default function App() {
                              nodes={nodes}
                              edges={edges}
                              selectedNodeId={selectedNodeId}
+                             recordingNodeId={recordingNodeId}
                              onNodeSelect={handleNodeSelect}
                              onNodesChange={setNodes}
                              onStartMeeting={handleStartMeeting}
@@ -429,6 +470,8 @@ export default function App() {
                          onClose={() => setSelectedNodeId(null)}
                          node={nodes.find(n => n.id === selectedNodeId) || null}
                          onUpdate={handleUpdateNode}
+                         onCreateNode={handleCreateNode}
+                         onRecordingStateChange={handleRecordingStateChange}
                          initialTab={panelTab}
                       />
                   </div>

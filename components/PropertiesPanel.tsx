@@ -11,10 +11,11 @@ interface PropertiesPanelProps {
   onClose: () => void;
   onUpdate: (updatedNode: NodeData) => void;
   onCreateNode?: (parentId: string, label: string) => string | null;
+  onRecordingStateChange?: (isRecording: boolean) => void;
   initialTab?: 'details' | 'content' | 'meetings';
 }
 
-export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, onClose, onUpdate, onCreateNode, initialTab }) => {
+export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, onClose, onUpdate, onCreateNode, onRecordingStateChange, initialTab }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [activeTab, setActiveTab] = useState<'details' | 'content' | 'meetings'>('content');
@@ -34,7 +35,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, 
     if (initialTab) {
       setActiveTab(initialTab);
     }
-  }, [initialTab, node?.id]); // Also reset when node changes if desired, though usually controlled by parent
+  }, [initialTab, node?.id]); 
+
+  // Sync internal meeting state with parent
+  useEffect(() => {
+    if (onRecordingStateChange) {
+      onRecordingStateChange(isMeetingActive);
+    }
+  }, [isMeetingActive]);
 
   useEffect(() => {
     let interval: any;
@@ -47,6 +55,16 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, 
     }
     return () => clearInterval(interval);
   }, [isMeetingActive]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+         mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+         if (onRecordingStateChange) onRecordingStateChange(false);
+      }
+    };
+  }, []);
 
   if (!node) return null;
 

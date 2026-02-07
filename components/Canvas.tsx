@@ -7,6 +7,7 @@ interface CanvasProps {
   nodes: NodeData[];
   edges: Edge[];
   selectedNodeId: string | null;
+  recordingNodeId?: string | null;
   onNodeSelect: (id: string | null) => void;
   onNodesChange: (nodes: NodeData[]) => void;
   onStartMeeting: (id: string) => void;
@@ -16,6 +17,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   nodes,
   edges,
   selectedNodeId,
+  recordingNodeId,
   onNodeSelect,
   onNodesChange,
   onStartMeeting
@@ -111,6 +113,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             key={node.id}
             data={node}
             isSelected={selectedNodeId === node.id}
+            isRecording={node.id === recordingNodeId}
             onMouseDown={handleMouseDown}
             onClick={onNodeSelect}
             onStartMeeting={onStartMeeting}
