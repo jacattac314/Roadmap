@@ -80,6 +80,7 @@ export interface Project {
   nodes: NodeData[];
   edges: Edge[];
   logs: ExecutionLog[];
+  roadmapData?: RoadmapData;
   updatedAt: number;
 }
 
@@ -143,6 +144,7 @@ export interface RoadmapFeature {
   confidence: number;
   isCriticalPath?: boolean;
   predictionRationale?: string;
+  pocEmail?: string;
 }
 
 export interface AIInsight {

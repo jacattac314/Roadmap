@@ -1,4 +1,5 @@
-import { NodeType, NodeData, Edge } from './types';
+
+import { NodeType, NodeData, Edge, Project } from './types';
 
 export const INITIAL_NODES: NodeData[] = [
   {
@@ -100,3 +101,121 @@ export const MODEL_OPTIONS = [
   { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
   { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
 ];
+
+export const MARS_ROVER_PROJECT: Project = {
+  id: 'mars-rover-demo',
+  name: 'Mars Rover Retrieval Mission',
+  updatedAt: Date.now(),
+  nodes: INITIAL_NODES,
+  edges: INITIAL_EDGES,
+  logs: [],
+  roadmapData: {
+    summary: "Execute a high-stakes sample retrieval mission under extreme environmental constraints (dust, -120°C). The plan prioritizes autonomous survival systems in Q1, deep drilling capabilities in Q2, and integrated sterility/power validation in Q3/Q4.",
+    workstreams: [
+      { id: 'ws1', name: 'Autonomy & Software', purpose: 'Navigation and remote operations handling 15m latency.' },
+      { id: 'ws2', name: 'Hardware & Mechanics', purpose: 'Drilling, containment, and chassis endurance.' },
+      { id: 'ws3', name: 'Power & Environment', purpose: 'Thermal management and solar efficiency.' }
+    ],
+    milestones: [
+      { name: 'Core Navigation Algorithm Freeze', quarter: 1 },
+      { name: 'Drill Payload Integration', quarter: 2 },
+      { name: 'Thermal Vacuum Chamber Test', quarter: 3 },
+      { name: 'Final Mission Sim (Earth Analog)', quarter: 4 }
+    ],
+    features: [
+      {
+        id: 'feat-1',
+        name: 'Autonomous Obstacle Avoidance',
+        description: 'AI-driven pathfinding to handle terrain without real-time Earth comms.',
+        priority: 'must_have',
+        status: 'completed',
+        risk: 'medium',
+        quarters: [1],
+        workstream: 'Autonomy & Software',
+        effort: 8,
+        team: 'Software',
+        confidence: 90,
+        isCriticalPath: true,
+        dependencies: [],
+        risks: ['Processing power limits'],
+        subtasks: [
+           { name: 'LIDAR Sensor Driver', status: 'completed', assignee: 'SW Team', dueDate: 'Q1', isBlocked: false },
+           { name: 'Pathfinding Heuristics', status: 'completed', assignee: 'SW Team', dueDate: 'Q1', isBlocked: false }
+        ]
+      },
+      {
+        id: 'feat-2',
+        name: 'Deep Drilling Mechanism (2m)',
+        description: 'Hardened carbide drill assembly capable of 2m depth extraction.',
+        priority: 'must_have',
+        status: 'in_progress',
+        risk: 'high',
+        quarters: [1, 2],
+        workstream: 'Hardware & Mechanics',
+        effort: 10,
+        team: 'Mech Eng',
+        confidence: 70,
+        isCriticalPath: true,
+        dependencies: [],
+        risks: ['Bit failure in basalt'],
+        riskReason: 'Drill bit durability in unknown substrates poses mission failure risk.',
+        subtasks: [
+           { name: 'Motor Torque Calibration', status: 'completed', assignee: 'ME Team', dueDate: 'Q1', isBlocked: false },
+           { name: 'Bit Exchange System', status: 'in_progress', assignee: 'ME Team', dueDate: 'Q2', isBlocked: false }
+        ]
+      },
+      {
+         id: 'feat-3',
+         name: 'Sterile Sample Vault',
+         description: 'Hermetically sealed storage to prevent Earth contamination.',
+         priority: 'must_have',
+         status: 'planned',
+         risk: 'medium',
+         quarters: [2],
+         workstream: 'Hardware & Mechanics',
+         effort: 6,
+         team: 'Bio/Mech',
+         confidence: 85,
+         isCriticalPath: true,
+         dependencies: ['feat-2'],
+         subtasks: []
+      },
+      {
+         id: 'feat-4',
+         name: 'Solar-Thermal Battery System',
+         description: 'Hybrid power unit for 2-week dust storm survival.',
+         priority: 'should_have',
+         status: 'planned',
+         risk: 'low',
+         quarters: [2, 3],
+         workstream: 'Power & Environment',
+         effort: 5,
+         team: 'Power',
+         confidence: 95,
+         isCriticalPath: false,
+         dependencies: [],
+         subtasks: []
+      },
+      {
+         id: 'feat-5',
+         name: 'Remote Diagnostics Suite',
+         description: 'Self-healing software for system health monitoring.',
+         priority: 'could_have',
+         status: 'at_risk',
+         risk: 'low',
+         quarters: [3],
+         workstream: 'Autonomy & Software',
+         effort: 4,
+         team: 'Software',
+         confidence: 60,
+         isCriticalPath: false,
+         dependencies: ['feat-1'],
+         subtasks: []
+      }
+    ],
+    insights: [
+      { type: 'risk', title: 'Drill Durability', description: 'Basalt rock hardness exceeds current carbide bit specs.', severity: 'high' },
+      { type: 'resource', title: 'Analog Site Availability', description: 'Chilean desert test site booking conflict in Q3.', severity: 'medium' }
+    ]
+  }
+};

@@ -129,3 +129,36 @@ export const generateChatResponse = async ({
      return { text: "", error: error.message };
   }
 };
+
+export const transcribeAudio = async (audioBase64: string, mimeType: string): Promise<GeminiResponse> => {
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
+    // Explicitly using gemini-3-flash-preview as requested for audio tasks
+    const modelName = 'gemini-3-flash-preview'; 
+
+    const makeRequest = async () => {
+      return await ai.models.generateContent({
+        model: modelName,
+        contents: {
+          parts: [
+            { inlineData: { mimeType: mimeType, data: audioBase64 } },
+            { text: "Transcribe this audio meeting accurately. Then, extract the following in valid JSON format: 1. A brief 'summary'. 2. A list of 'decisions'. 3. A list of 'actionItems'. 4. The full 'transcript'. JSON Structure: { summary: string, decisions: string[], actionItems: string[], transcript: string }" }
+          ]
+        },
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+    };
+
+    const response = await callWithRetry(makeRequest);
+
+    return {
+      text: response.text || "",
+    };
+  } catch (error: any) {
+    console.error("Transcription Error:", error);
+    return { text: "", error: error.message };
+  }
+};

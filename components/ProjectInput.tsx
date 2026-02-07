@@ -1,16 +1,18 @@
 
 import React, { useState } from 'react';
-import { Search, Globe, ChevronDown, Sparkles, ArrowRight, Upload, Link, HardDrive, Copy } from 'lucide-react';
+import { Search, Globe, ChevronDown, Sparkles, ArrowRight } from 'lucide-react';
+import { MODEL_OPTIONS } from '../constants';
 
 interface ProjectInputProps {
-  onStart: (input: string) => void;
+  onStart: (input: string, model?: string) => void;
 }
 
 export const ProjectInput: React.FC<ProjectInputProps> = ({ onStart }) => {
   const [input, setInput] = useState('');
+  const [model, setModel] = useState(MODEL_OPTIONS[0].value);
 
   const handleStart = () => {
-    if (input.trim()) onStart(input);
+    if (input.trim()) onStart(input, model);
   };
 
   return (
@@ -43,11 +45,22 @@ export const ProjectInput: React.FC<ProjectInputProps> = ({ onStart }) => {
              
              <div className="flex items-center justify-between px-1 md:px-2 pb-1">
                 <div className="flex gap-1 md:gap-2">
+                   <div className="relative flex items-center">
+                      <Sparkles className="absolute left-3 w-3 h-3 md:w-3.5 md:h-3.5 text-zinc-300 pointer-events-none z-10" />
+                      <select
+                        value={model}
+                        onChange={(e) => setModel(e.target.value)}
+                        className="appearance-none pl-8 pr-8 py-1.5 rounded-full bg-[#2B2C2E] border border-[#444746] text-white text-[10px] md:text-xs font-medium hover:bg-[#37393B] transition-colors outline-none cursor-pointer min-w-[120px]"
+                      >
+                        {MODEL_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-3 w-2.5 h-2.5 md:w-3 md:h-3 text-zinc-500 pointer-events-none" />
+                   </div>
+                   
                    <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-[#2B2C2E] border border-[#444746] text-white text-[10px] md:text-xs font-medium hover:bg-[#37393B] transition-colors">
                       <Globe className="w-3 h-3 md:w-3.5 md:h-3.5" /> <span className="hidden xs:inline">Web</span> <ChevronDown className="text-zinc-500 w-2.5 h-2.5 md:w-3 md:h-3" />
-                   </button>
-                   <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-[#2B2C2E] border border-[#444746] text-white text-[10px] md:text-xs font-medium hover:bg-[#37393B] transition-colors">
-                      <Sparkles className="w-3 h-3 md:w-3.5 md:h-3.5" /> <span className="hidden xs:inline">Research</span> <ChevronDown className="text-zinc-500 w-2.5 h-2.5 md:w-3 md:h-3" />
                    </button>
                 </div>
                 <button 
@@ -56,26 +69,6 @@ export const ProjectInput: React.FC<ProjectInputProps> = ({ onStart }) => {
                   className={`p-2 rounded-full transition-all ${input.trim() ? 'bg-[#A8C7FA] text-[#062E6F] hover:scale-110 shadow-lg shadow-indigo-500/20' : 'bg-[#3C4043] text-zinc-500 opacity-50'}`}
                 >
                    <ArrowRight size={20} />
-                </button>
-             </div>
-          </div>
-
-          <div className="flex flex-col items-center gap-2">
-             <p className="text-zinc-300 text-base md:text-lg">or drop your files</p>
-             <p className="text-zinc-500 text-[10px] md:text-xs text-center">pdf, images, docs, audio, and more</p>
-             
-             <div className="flex flex-wrap justify-center gap-2 md:gap-3 mt-4 px-4">
-                <button className="flex items-center gap-2 px-3 md:px-4 py-2 rounded-full bg-[#1E1F20] border border-[#444746] text-white text-[10px] md:text-xs font-medium hover:bg-[#2B2C2E] transition-colors">
-                   <Upload size={14} className="text-[#A8C7FA]" /> Upload
-                </button>
-                <button className="flex items-center gap-2 px-3 md:px-4 py-2 rounded-full bg-[#1E1F20] border border-[#444746] text-white text-[10px] md:text-xs font-medium hover:bg-[#2B2C2E] transition-colors">
-                   <Link size={14} className="text-[#F28B82]" /> Link
-                </button>
-                <button className="flex items-center gap-2 px-3 md:px-4 py-2 rounded-full bg-[#1E1F20] border border-[#444746] text-white text-[10px] md:text-xs font-medium hover:bg-[#2B2C2E] transition-colors">
-                   <HardDrive size={14} className="text-[#81C995]" /> Drive
-                </button>
-                <button className="flex items-center gap-2 px-3 md:px-4 py-2 rounded-full bg-[#1E1F20] border border-[#444746] text-white text-[10px] md:text-xs font-medium hover:bg-[#2B2C2E] transition-colors">
-                   <Copy size={14} className="text-[#FDD663]" /> Text
                 </button>
              </div>
           </div>

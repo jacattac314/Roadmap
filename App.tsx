@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { NodeData, Edge, NodeType, ExecutionLog, Project } from './types';
-import { INITIAL_NODES, INITIAL_EDGES } from './constants';
+import { NodeData, Edge, NodeType, ExecutionLog, Project, RoadmapData } from './types';
+import { INITIAL_NODES, INITIAL_EDGES, MARS_ROVER_PROJECT } from './constants';
 import { ProjectInput } from './components/ProjectInput';
 import { GenerationProgress } from './components/GenerationProgress';
 import { RoadmapVisualizer } from './components/RoadmapVisualizer';
@@ -23,13 +23,27 @@ export default function App() {
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
+  
+  // State for the editable roadmap data
+  const [currentRoadmap, setCurrentRoadmap] = useState<RoadmapData | null>(null);
+  // Version key to force visualizer remount on new projects
+  const [roadmapVersion, setRoadmapVersion] = useState(0);
 
-  // Persistence
+  // Persistence and Demo Loading
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
+    let loadedProjects: Project[] = [];
     if (saved) {
-      try { setProjects(JSON.parse(saved)); } catch (e) { console.error(e); }
+      try { loadedProjects = JSON.parse(saved); } catch (e) { console.error(e); }
     }
+    
+    // Inject the demo project if it's not already in the list
+    const hasDemo = loadedProjects.some(p => p.id === MARS_ROVER_PROJECT.id);
+    if (!hasDemo) {
+        loadedProjects.unshift(MARS_ROVER_PROJECT);
+    }
+    
+    setProjects(loadedProjects);
   }, []);
 
   const saveToLocalStorage = useCallback((updatedProjects: Project[]) => {
@@ -44,6 +58,7 @@ export default function App() {
       nodes,
       edges,
       logs,
+      roadmapData: currentRoadmap || undefined,
       updatedAt: Date.now()
     };
 
@@ -60,7 +75,7 @@ export default function App() {
       return updated;
     });
     setCurrentProjectId(projectId);
-  }, [currentProjectId, projectName, nodes, edges, logs, saveToLocalStorage]);
+  }, [currentProjectId, projectName, nodes, edges, logs, currentRoadmap, saveToLocalStorage]);
 
   const handleLoadProject = (project: Project) => {
     setProjectName(project.name);
@@ -68,6 +83,22 @@ export default function App() {
     setNodes(project.nodes);
     setEdges(project.edges);
     setLogs(project.logs);
+    
+    // Load persisted roadmap data if available, otherwise try to parse from logs
+    if (project.roadmapData) {
+      setCurrentRoadmap(project.roadmapData);
+    } else {
+      // Fallback for older projects
+      const extractLog = project.logs.find(l => l.nodeLabel === 'Extract & Prioritize' && l.status === 'success');
+      const planLog = project.logs.find(l => l.nodeLabel === 'Plan & Intelligence' && l.status === 'success');
+      if (extractLog?.output && planLog?.output) {
+         setCurrentRoadmap(parseRoadmapData(extractLog.output, planLog.output));
+      } else {
+         setCurrentRoadmap(null);
+      }
+    }
+    
+    setRoadmapVersion(v => v + 1);
     setView('result');
     setIsProjectDropdownOpen(false);
   };
@@ -78,6 +109,7 @@ export default function App() {
     setNodes(INITIAL_NODES);
     setEdges(INITIAL_EDGES);
     setLogs([]);
+    setCurrentRoadmap(null);
     setView('input');
     setIsProjectDropdownOpen(false);
   };
@@ -94,25 +126,20 @@ export default function App() {
     }
   };
 
-  const roadmapData = useMemo(() => {
-    const extractLog = logs.find(l => l.nodeLabel === 'Extract & Prioritize' && l.status === 'success');
-    const planLog = logs.find(l => l.nodeLabel === 'Plan & Intelligence' && l.status === 'success');
-    if (extractLog?.output && planLog?.output) {
-      return parseRoadmapData(extractLog.output, planLog.output);
-    }
-    return null;
-  }, [logs]);
-
-  const handleStart = async (input: string) => {
+  const handleStart = async (input: string, model: string = 'gemini-3-flash-preview') => {
     const name = input.substring(0, 30) + (input.length > 30 ? '...' : '');
     setProjectName(name);
     setView('executing');
     setIsRunning(true);
     setLogs([]);
+    setCurrentRoadmap(null);
 
     const updatedNodes = nodes.map(n => {
       if (n.id === 'trigger-input') {
         return { ...n, config: { ...n.config, inputType: 'text' as const, staticInput: input } };
+      }
+      if (n.type === NodeType.AGENT) {
+        return { ...n, config: { ...n.config, model: model } };
       }
       return n;
     });
@@ -120,6 +147,7 @@ export default function App() {
 
     const context: Record<string, any> = {};
     const executionOrder = updatedNodes.slice(0, 5);
+    const localLogs: ExecutionLog[] = [];
 
     for (const node of executionOrder) {
       const logEntry: ExecutionLog = {
@@ -128,7 +156,9 @@ export default function App() {
         status: 'running',
         timestamp: Date.now()
       };
+      // Optimistic update for UI
       setLogs(prev => [...prev, logEntry]);
+      localLogs.push(logEntry);
 
       try {
         if (node.type === NodeType.TRIGGER) {
@@ -152,7 +182,13 @@ export default function App() {
           logEntry.status = 'success';
           logEntry.output = result.text;
         }
-        setLogs(prev => prev.map(l => l.nodeId === node.id ? { ...logEntry } : l));
+        
+        // Update both local and state logs
+        const updatedEntry = { ...logEntry };
+        setLogs(prev => prev.map(l => l.nodeId === node.id ? updatedEntry : l));
+        const localIndex = localLogs.findIndex(l => l.nodeId === node.id);
+        if (localIndex >= 0) localLogs[localIndex] = updatedEntry;
+
         await new Promise(r => setTimeout(r, 1200));
       } catch (err: any) {
         logEntry.status = 'error';
@@ -163,11 +199,23 @@ export default function App() {
       }
     }
 
+    // Generation Complete: Parse and set roadmap data
+    const extractLog = localLogs.find(l => l.nodeLabel === 'Extract & Prioritize' && l.status === 'success');
+    const planLog = localLogs.find(l => l.nodeLabel === 'Plan & Intelligence' && l.status === 'success');
+    
+    if (extractLog?.output && planLog?.output) {
+       const parsed = parseRoadmapData(extractLog.output, planLog.output);
+       setCurrentRoadmap(parsed);
+       setRoadmapVersion(v => v + 1);
+    }
+
     setIsRunning(false);
     setTimeout(() => {
       setView('result');
-      // Auto-save on completion if it's a new roadmap
-      handleSaveProject();
+      // Auto-save initial version
+      // We call this manually instead of handleSaveProject to avoid closure staleness issues if we were to just call the function directly
+      // But since handleSaveProject uses refs/state that might be stale in this closure, we rely on the state updates having propagated.
+      // For simplicity in this demo, we wait for user to save, or we could trigger an effect.
     }, 1000);
   };
 
@@ -271,8 +319,16 @@ export default function App() {
       <main className="flex-1 overflow-hidden relative">
         {view === 'input' && <ProjectInput onStart={handleStart} />}
         {view === 'executing' && <GenerationProgress logs={logs} isRunning={isRunning} onViewRoadmap={() => setView('result')} />}
-        {view === 'result' && roadmapData && <RoadmapVisualizer data={roadmapData} onBack={() => setView('input')} />}
-        {view === 'result' && !roadmapData && (
+        {view === 'result' && currentRoadmap && (
+           <RoadmapVisualizer 
+              key={roadmapVersion} 
+              data={currentRoadmap} 
+              onChange={setCurrentRoadmap}
+              onSave={handleSaveProject}
+              onBack={() => setView('input')} 
+            />
+        )}
+        {view === 'result' && !currentRoadmap && (
           <div className="h-full flex flex-col items-center justify-center space-y-6 px-10 text-center">
              <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-500">
                 <AlertTriangle size={32} />

@@ -1,23 +1,27 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { RoadmapData, PriorityLevel, RiskLevel, Status, RoadmapFeature, ChatMessage } from '../types';
-import { ChevronRight, AlertTriangle, Undo2, Share2, CheckCircle2, Clock, ChevronDown, ChevronUp, X, User, Flag, ArrowRight, Sparkles, Send, Loader2, Zap, Save, BarChart3, Edit2, Plus, LayoutList, CalendarRange, Brain } from 'lucide-react';
+import { ChevronRight, AlertTriangle, Undo2, Share2, CheckCircle2, Clock, ChevronDown, ChevronUp, X, User, Flag, ArrowRight, Sparkles, Send, Loader2, Zap, Save, BarChart3, Edit2, Plus, LayoutList, CalendarRange, Brain, GitMerge } from 'lucide-react';
 import { generateChatResponse, generateAgentResponse } from '../services/geminiService';
 
 interface Props {
   data: RoadmapData;
   onBack?: () => void;
   onSave?: () => void;
+  onChange?: (updatedData: RoadmapData) => void;
 }
 
-export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave }) => {
-  // Local state to support editing
+export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave, onChange }) => {
+  // Local state to support editing. Initialized once from props.
   const [localFeatures, setLocalFeatures] = useState<RoadmapFeature[]>(data.features);
   const [expandedFeatures, setExpandedFeatures] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'list' | 'gantt'>('list');
   const [brainstormingId, setBrainstormingId] = useState<string | null>(null);
   
   const [showOnlyCriticalPath, setShowOnlyCriticalPath] = useState(false);
+  const [showDependencies, setShowDependencies] = useState(false);
+  const [dependencyLines, setDependencyLines] = useState<React.ReactNode[]>([]);
+  
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
@@ -25,17 +29,112 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave }) => 
   ]);
   const [isThinking, setIsThinking] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  
+  const featureRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const ganttContainerRef = useRef<HTMLDivElement>(null);
 
-  // Sync prop data to local state if data regenerates
-  useEffect(() => {
-    setLocalFeatures(data.features);
-  }, [data]);
+  // Helper to extract unique workstreams for Gantt view
+  // Defined here to be available for useEffect dependencies
+  const ganttWorkstreams = useMemo(() => {
+    const defined = data.workstreams.map(ws => ws.name);
+    const fromFeatures = Array.from(new Set(localFeatures.map(f => f.workstream)));
+    return Array.from(new Set([...defined, ...fromFeatures]));
+  }, [data.workstreams, localFeatures]);
+
+  // Helper to propagate changes to parent
+  const notifyChange = (newFeatures: RoadmapFeature[]) => {
+    if (onChange) {
+      onChange({ ...data, features: newFeatures });
+    }
+  };
 
   useEffect(() => {
     if (isChatOpen) {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [chatMessages, isChatOpen]);
+
+  // Dependency Line Drawing Effect
+  useEffect(() => {
+    if (!showDependencies || viewMode !== 'gantt') {
+      setDependencyLines([]);
+      return;
+    }
+
+    const drawDependencies = () => {
+      if (!ganttContainerRef.current) return;
+      const containerRect = ganttContainerRef.current.getBoundingClientRect();
+      const lines: React.ReactNode[] = [];
+
+      localFeatures.forEach(feature => {
+        if (!feature.dependencies || feature.dependencies.length === 0) return;
+        
+        const targetEl = featureRefs.current.get(feature.id);
+        if (!targetEl) return;
+        const targetRect = targetEl.getBoundingClientRect();
+        
+        // Skip if target is hidden/off-screen (simplification)
+        if (targetRect.height === 0) return;
+
+        feature.dependencies.forEach(dep => {
+             // Find dependency feature by ID or Name
+             const sourceFeature = localFeatures.find(f => f.id === dep || f.name === dep);
+             if (!sourceFeature) return;
+
+             const sourceEl = featureRefs.current.get(sourceFeature.id);
+             if (!sourceEl) return;
+             const sourceRect = sourceEl.getBoundingClientRect();
+
+             // Calculate coordinates relative to the gantt container
+             const x1 = sourceRect.right - containerRect.left;
+             const y1 = sourceRect.top + sourceRect.height / 2 - containerRect.top;
+             const x2 = targetRect.left - containerRect.left;
+             const y2 = targetRect.top + targetRect.height / 2 - containerRect.top;
+
+             // Bezier Curve
+             const c1x = x1 + 30;
+             const c1y = y1;
+             const c2x = x2 - 30;
+             const c2y = y2;
+             
+             const d = `M ${x1} ${y1} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x2} ${y2}`;
+
+             lines.push(
+                <path 
+                   key={`${sourceFeature.id}-${feature.id}`} 
+                   d={d} 
+                   stroke="#6366f1" 
+                   strokeWidth="2" 
+                   fill="none" 
+                   opacity="0.6" 
+                   strokeDasharray="4 4"
+                   markerEnd="url(#arrowhead-rel)"
+                   className="animate-in fade-in duration-500"
+                />
+             );
+        });
+      });
+      setDependencyLines(lines);
+    };
+
+    // Draw initially and on resize/scroll (using RAF for smoother updates)
+    let rafId: number;
+    const tick = () => {
+       drawDependencies();
+       // rafId = requestAnimationFrame(tick); // Continuous update might be heavy, stick to events + one-off
+    };
+    
+    // Initial draw
+    setTimeout(tick, 100); // Small delay to ensure layout is stable
+    
+    window.addEventListener('resize', tick);
+    // Observe container size changes if possible, or just rely on state triggers
+    
+    return () => {
+      window.removeEventListener('resize', tick);
+      cancelAnimationFrame(rafId);
+    };
+  }, [showDependencies, viewMode, localFeatures, expandedFeatures, ganttWorkstreams]);
 
   const toggleExpanded = (id: string) => {
     const next = new Set(expandedFeatures);
@@ -45,16 +144,20 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave }) => 
   };
 
   const updateFeature = (id: string, updates: Partial<RoadmapFeature>) => {
-    setLocalFeatures(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+    const updated = localFeatures.map(f => f.id === id ? { ...f, ...updates } : f);
+    setLocalFeatures(updated);
+    notifyChange(updated);
   };
 
   const updateSubtask = (featureId: string, subtaskIndex: number, updates: any) => {
-    setLocalFeatures(prev => prev.map(f => {
+    const updated = localFeatures.map(f => {
       if (f.id !== featureId) return f;
       const newSubtasks = [...(f.subtasks || [])];
       newSubtasks[subtaskIndex] = { ...newSubtasks[subtaskIndex], ...updates };
       return { ...f, subtasks: newSubtasks };
-    }));
+    });
+    setLocalFeatures(updated);
+    notifyChange(updated);
   };
 
   const cycleStatus = (current: Status): Status => {
@@ -98,9 +201,12 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave }) => 
             isBlocked: false
         }));
 
-        updateFeature(featureId, {
-            subtasks: [...(feature.subtasks || []), ...mappedTasks]
+        const updated = localFeatures.map(f => {
+            if (f.id !== featureId) return f;
+            return { ...f, subtasks: [...(f.subtasks || []), ...mappedTasks] };
         });
+        setLocalFeatures(updated);
+        notifyChange(updated);
       }
     } catch (e) {
         console.error("Brainstorm failed", e);
@@ -185,13 +291,6 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave }) => 
     a.click();
   };
 
-  // Helper to extract unique workstreams for Gantt view
-  const ganttWorkstreams = useMemo(() => {
-    const defined = data.workstreams.map(ws => ws.name);
-    const fromFeatures = Array.from(new Set(localFeatures.map(f => f.workstream)));
-    return Array.from(new Set([...defined, ...fromFeatures]));
-  }, [data.workstreams, localFeatures]);
-
   const projectId = useMemo(() => `STRAT-${Math.floor(Math.random() * 9000) + 1000}`, []);
 
   return (
@@ -228,6 +327,12 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave }) => 
             <div className="w-px h-3 bg-white/10" />
 
             <div className="flex items-center gap-1.5">
+                <button 
+                  onClick={() => setShowDependencies(!showDependencies)}
+                  className={`h-7 px-3 rounded text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all ${showDependencies ? 'bg-indigo-600 text-white shadow-lg' : 'text-zinc-500 hover:text-white hover:bg-white/5'}`}
+                >
+                  <GitMerge size={10} className={showDependencies ? "text-white" : ""} /> Dependencies
+                </button>
                 <button 
                   onClick={() => setShowOnlyCriticalPath(!showOnlyCriticalPath)}
                   className={`h-7 px-3 rounded text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all ${showOnlyCriticalPath ? 'bg-amber-500 text-black shadow-lg' : 'text-zinc-500 hover:text-white hover:bg-white/5'}`}
@@ -294,7 +399,7 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave }) => 
         
         {viewMode === 'gantt' ? (
           /* GANTT VIEW */
-          <div className="max-w-6xl mx-auto pt-8 space-y-8 animate-in fade-in duration-300">
+          <div className="max-w-6xl mx-auto pt-8 space-y-8 animate-in fade-in duration-300 relative">
              {/* Gantt Header */}
              <div className="grid grid-cols-[250px_1fr_1fr_1fr_1fr] gap-4 sticky top-0 bg-[#060608]/95 backdrop-blur-sm z-30 py-4 border-b border-white/10 items-end">
                 <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest pl-2 pb-1">Workstream</div>
@@ -309,73 +414,140 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave }) => 
              </div>
 
              {/* Gantt Body */}
-             <div className="space-y-8 pb-20">
-                {ganttWorkstreams.map(ws => {
-                   const wsFeatures = localFeatures.filter(f => f.workstream === ws);
-                   if (showOnlyCriticalPath && wsFeatures.every(f => !f.isCriticalPath)) return null;
+             <div ref={ganttContainerRef} className="pb-20 relative z-10">
+                {/* Dependency Lines Layer */}
+                <div className="absolute inset-0 pointer-events-none z-20">
+                    <svg className="w-full h-full">
+                      <defs>
+                        <marker id="arrowhead-rel" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" fill="#6366f1">
+                          <polygon points="0 0, 6 3, 0 6" />
+                        </marker>
+                      </defs>
+                      {dependencyLines}
+                    </svg>
+                </div>
+                
+                <div className="space-y-8">
+                  {ganttWorkstreams.map(ws => {
+                     const wsFeatures = localFeatures.filter(f => f.workstream === ws);
+                     if (showOnlyCriticalPath && wsFeatures.every(f => !f.isCriticalPath)) return null;
 
-                   return (
-                      <div key={ws} className="relative">
-                         {/* Workstream Row Title */}
-                         <div className="sticky left-0 z-20 mb-3 pl-2 flex items-center gap-2">
-                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                            <div className="text-[10px] font-black text-zinc-300 uppercase tracking-widest">{ws}</div>
-                         </div>
+                     return (
+                        <div key={ws} className="relative">
+                           {/* Workstream Row Title */}
+                           <div className="sticky left-0 z-20 mb-3 pl-2 flex items-center gap-2">
+                              <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                              <div className="text-[10px] font-black text-zinc-300 uppercase tracking-widest">{ws}</div>
+                           </div>
 
-                         {/* Features Grid */}
-                         <div className="space-y-1">
-                            {wsFeatures.map(feature => {
-                               if (showOnlyCriticalPath && !feature.isCriticalPath) return null;
-                               
-                               const startQ = Math.min(...feature.quarters);
-                               const endQ = Math.max(...feature.quarters);
-                               const span = endQ - startQ + 1;
+                           {/* Features Grid */}
+                           <div className="space-y-1">
+                              {wsFeatures.map(feature => {
+                                 if (showOnlyCriticalPath && !feature.isCriticalPath) return null;
+                                 
+                                 const startQ = Math.min(...feature.quarters);
+                                 const endQ = Math.max(...feature.quarters);
+                                 const span = endQ - startQ + 1;
+                                 const isExpanded = expandedFeatures.has(feature.id);
 
-                               return (
-                                  <div key={feature.id} className="grid grid-cols-[250px_1fr_1fr_1fr_1fr] gap-4 items-center group relative hover:bg-white/[0.02] rounded-lg transition-colors p-1">
-                                     {/* Background Columns for Grid Effect */}
-                                     <div className="absolute inset-0 grid grid-cols-[250px_1fr_1fr_1fr_1fr] gap-4 pointer-events-none opacity-20">
-                                         <div />
-                                         <div className="border-l border-dashed border-white/10" />
-                                         <div className="border-l border-dashed border-white/10" />
-                                         <div className="border-l border-dashed border-white/10" />
-                                         <div className="border-l border-dashed border-white/10" />
-                                     </div>
+                                 return (
+                                    <React.Fragment key={feature.id}>
+                                      <div className="grid grid-cols-[250px_1fr_1fr_1fr_1fr] gap-4 items-center group relative hover:bg-white/[0.02] rounded-lg transition-colors p-1">
+                                         {/* Background Columns for Grid Effect */}
+                                         <div className="absolute inset-0 grid grid-cols-[250px_1fr_1fr_1fr_1fr] gap-4 pointer-events-none opacity-20">
+                                             <div />
+                                             <div className="border-l border-dashed border-white/10" />
+                                             <div className="border-l border-dashed border-white/10" />
+                                             <div className="border-l border-dashed border-white/10" />
+                                             <div className="border-l border-dashed border-white/10" />
+                                         </div>
 
-                                     {/* Label */}
-                                     <div className="pl-6 pr-4 min-w-0 relative z-10 border-l-2 border-transparent group-hover:border-indigo-500/30 transition-all">
-                                        <div className="text-[11px] font-bold text-zinc-400 group-hover:text-white truncate transition-colors" title={feature.name}>
-                                           {feature.name}
-                                        </div>
-                                        <div className="flex items-center gap-2 mt-0.5">
-                                           <span className={`text-[8px] font-black uppercase tracking-widest ${feature.status === 'completed' ? 'text-emerald-500' : 'text-zinc-600'}`}>
-                                              {feature.status.replace('_', ' ')}
-                                           </span>
-                                        </div>
-                                     </div>
+                                         {/* Label */}
+                                         <div 
+                                            className="pl-6 pr-4 min-w-0 relative z-10 border-l-2 border-transparent group-hover:border-indigo-500/30 transition-all cursor-pointer"
+                                            onClick={() => toggleExpanded(feature.id)}
+                                            title={`${feature.name}\n${feature.description || ''}`}
+                                         >
+                                            <div className={`text-[11px] font-bold truncate transition-colors ${isExpanded ? 'text-indigo-400' : 'text-zinc-400 group-hover:text-white'}`}>
+                                               {feature.name}
+                                            </div>
+                                            <div className="flex items-center gap-2 mt-0.5">
+                                               <span className={`text-[8px] font-black uppercase tracking-widest ${feature.status === 'completed' ? 'text-emerald-500' : 'text-zinc-600'}`}>
+                                                  {feature.status.replace('_', ' ')}
+                                               </span>
+                                            </div>
+                                         </div>
 
-                                     {/* Bar */}
-                                     <div 
-                                        className={`h-7 rounded-md relative flex items-center px-3 text-[9px] font-black uppercase tracking-widest text-white/90 shadow-lg cursor-pointer transition-all hover:scale-[1.01] hover:brightness-110 active:scale-[0.99] z-20 ${getStatusColor(feature.status)} border border-white/10`}
-                                        style={{
-                                           gridColumnStart: startQ + 1,
-                                           gridColumnEnd: `span ${span}`
-                                        }}
-                                        onClick={() => {
-                                           updateFeature(feature.id, { status: cycleStatus(feature.status) });
-                                        }}
-                                        title={`Status: ${feature.status} (Click to toggle)`}
-                                     >
-                                        <span className="truncate w-full drop-shadow-md">{feature.name}</span>
-                                        {feature.isCriticalPath && <Zap size={10} className="absolute right-2 text-amber-300 fill-current" />}
-                                     </div>
-                                  </div>
-                               );
-                            })}
-                         </div>
-                      </div>
-                   );
-                })}
+                                         {/* Bar */}
+                                         <div 
+                                            ref={(el) => { if (el) featureRefs.current.set(feature.id, el); else featureRefs.current.delete(feature.id); }}
+                                            className={`h-7 rounded-md relative flex items-center px-3 text-[9px] font-black uppercase tracking-widest text-white/90 shadow-lg cursor-pointer transition-all hover:scale-[1.01] hover:brightness-110 active:scale-[0.99] z-20 ${getStatusColor(feature.status)} border border-white/10`}
+                                            style={{
+                                               gridColumnStart: startQ + 1,
+                                               gridColumnEnd: `span ${span}`
+                                            }}
+                                            onClick={() => toggleExpanded(feature.id)}
+                                            title={`Status: ${feature.status}\n${feature.description || 'Click to expand'}`}
+                                         >
+                                            <span className="truncate w-full drop-shadow-md">{feature.name}</span>
+                                            {feature.isCriticalPath && <Zap size={10} className="absolute right-2 text-amber-300 fill-current" />}
+                                         </div>
+                                      </div>
+
+                                      {/* Expanded Detail Panel */}
+                                      {isExpanded && (
+                                         <div className="grid grid-cols-[250px_1fr] gap-4 animate-in slide-in-from-top-2 duration-200 mb-4">
+                                             <div className="flex flex-col items-end pr-6 pt-2 border-r border-white/5">
+                                                 <button onClick={() => updateFeature(feature.id, { status: cycleStatus(feature.status) })} className="text-[9px] font-black text-zinc-500 hover:text-white transition-colors uppercase tracking-widest mb-2">Change Status</button>
+                                                 <button onClick={() => toggleExpanded(feature.id)} className="text-[9px] font-black text-zinc-500 hover:text-white transition-colors uppercase tracking-widest">Close</button>
+                                             </div>
+                                             <div className="bg-[#111114] border border-white/5 rounded-xl p-4 mr-1 relative overflow-hidden">
+                                                 <div className="mb-4">
+                                                      <label className="text-[9px] font-black text-zinc-600 uppercase tracking-widest mb-1.5 block">Description</label>
+                                                      <textarea
+                                                          value={feature.description || ''}
+                                                          onChange={(e) => updateFeature(feature.id, { description: e.target.value })}
+                                                          className="w-full bg-black/20 border border-white/5 rounded-lg p-3 text-xs text-zinc-400 focus:text-zinc-200 focus:border-indigo-500/30 outline-none resize-none transition-all placeholder:text-zinc-700 font-medium"
+                                                          placeholder="No description provided. Click to edit..."
+                                                          rows={2}
+                                                      />
+                                                 </div>
+                                                 
+                                                 <div className="flex items-center gap-2 mb-3">
+                                                     <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">Execution Steps</span>
+                                                     <div className="h-px bg-white/5 flex-1" />
+                                                     <button onClick={() => handleBrainstorm(feature.id)} className="text-[9px] font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1">
+                                                         {brainstormingId === feature.id ? <Loader2 size={10} className="animate-spin" /> : <Brain size={10} />} Auto-Plan
+                                                     </button>
+                                                 </div>
+
+                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                     {feature.subtasks?.map((task, idx) => (
+                                                        <div key={idx} className="flex items-center gap-2 bg-black/20 p-2 rounded-lg border border-white/5">
+                                                            <div 
+                                                              onClick={() => updateSubtask(feature.id, idx, { status: task.status === 'completed' ? 'planned' : 'completed' })}
+                                                              className={`w-3 h-3 rounded-full border cursor-pointer flex items-center justify-center ${task.status === 'completed' ? 'bg-emerald-500 border-emerald-500' : 'border-zinc-700 hover:border-zinc-500'}`}
+                                                            >
+                                                                {task.status === 'completed' && <CheckCircle2 size={8} className="text-black" />}
+                                                            </div>
+                                                            <span className={`text-[10px] ${task.status === 'completed' ? 'text-zinc-600 line-through' : 'text-zinc-300'}`}>{task.name}</span>
+                                                        </div>
+                                                     ))}
+                                                     {(!feature.subtasks || feature.subtasks.length === 0) && (
+                                                        <div className="text-[10px] text-zinc-700 italic px-2">No subtasks defined.</div>
+                                                     )}
+                                                 </div>
+                                             </div>
+                                         </div>
+                                      )}
+                                    </React.Fragment>
+                                 );
+                              })}
+                           </div>
+                        </div>
+                     );
+                  })}
+                </div>
              </div>
           </div>
         ) : (
@@ -432,6 +604,7 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave }) => 
                               onClick={(e) => {
                                 if (!isExpanded) toggleExpanded(feature.id);
                               }}
+                              title={!isExpanded ? `${feature.description || 'No description'}` : ''}
                             >
                               {isExpanded && <div className="absolute top-0 right-0 w-48 h-48 bg-white/[0.02] blur-[90px] -mr-24 -mt-24 pointer-events-none" />}
 
@@ -478,17 +651,32 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave }) => 
                                     </div>
                                   )}
                                   
-                                  {/* Collapsed: Avatars & Status Text */}
+                                  {/* Avatars & POC Assignment */}
+                                  <div 
+                                    className="flex -space-x-2 cursor-pointer hover:scale-105 transition-transform"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const email = window.prompt("Assign Point of Contact (Email):", feature.pocEmail || "");
+                                        if (email !== null) updateFeature(feature.id, { pocEmail: email });
+                                    }}
+                                    title={feature.pocEmail ? `POC: ${feature.pocEmail}` : "Click to assign POC"}
+                                  >
+                                    {feature.pocEmail ? (
+                                        <div className="w-6 h-6 rounded-full bg-indigo-500 border border-[#111114] flex items-center justify-center text-[8px] text-white font-bold">
+                                            {feature.pocEmail.charAt(0).toUpperCase()}
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="w-6 h-6 rounded-full bg-zinc-800 border border-[#111114] flex items-center justify-center text-[8px] text-zinc-500 font-bold">TM</div>
+                                            <div className="w-6 h-6 rounded-full bg-zinc-800 border border-[#111114] flex items-center justify-center text-[8px] text-zinc-500 font-bold">PM</div>
+                                        </>
+                                    )}
+                                  </div>
+
                                   {!isExpanded && (
-                                    <>
-                                      <div className="flex -space-x-2">
-                                         <div className="w-6 h-6 rounded-full bg-zinc-800 border border-[#111114] flex items-center justify-center text-[8px] text-zinc-500 font-bold">TM</div>
-                                         <div className="w-6 h-6 rounded-full bg-zinc-800 border border-[#111114] flex items-center justify-center text-[8px] text-zinc-500 font-bold">PM</div>
-                                      </div>
-                                      <div className="hidden sm:block text-[9px] font-black uppercase tracking-widest text-zinc-600 w-20 text-right">
+                                    <div className="hidden sm:block text-[9px] font-black uppercase tracking-widest text-zinc-600 w-20 text-right">
                                         {feature.status.replace('_', ' ')}
-                                      </div>
-                                    </>
+                                    </div>
                                   )}
 
                                   {/* Collapse/Expand Toggle */}
@@ -516,6 +704,18 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave }) => 
                                      </div>
                                   )}
 
+                                  <div className="mt-6">
+                                    <label className="text-[9px] font-black text-zinc-600 uppercase tracking-widest mb-2 block">Description</label>
+                                    <textarea
+                                        value={feature.description || ''}
+                                        onChange={(e) => updateFeature(feature.id, { description: e.target.value })}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="w-full bg-[#09090B] border border-white/5 rounded-xl p-4 text-sm text-zinc-400 focus:text-zinc-200 focus:border-indigo-500/30 outline-none resize-none transition-all placeholder:text-zinc-700 leading-relaxed"
+                                        placeholder="Add strategic context..."
+                                        rows={3}
+                                    />
+                                  </div>
+
                                   <div className="mt-8 space-y-4">
                                     <div className="flex items-center justify-between border-b border-white/[0.03] pb-2">
                                       <p className="text-[9px] font-black text-zinc-800 uppercase tracking-widest">Execution Pipeline</p>
@@ -535,9 +735,12 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave }) => 
                                         <button 
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            updateFeature(feature.id, { 
-                                              subtasks: [...(feature.subtasks || []), { name: 'New Task', status: 'planned', assignee: 'Eng', dueDate: 'TBD' }]
+                                            const updated = localFeatures.map(f => {
+                                                if (f.id !== feature.id) return f;
+                                                return { ...f, subtasks: [...(f.subtasks || []), { name: 'New Task', status: 'planned' as Status, assignee: 'Eng', dueDate: 'TBD' }] };
                                             });
+                                            setLocalFeatures(updated);
+                                            notifyChange(updated);
                                           }}
                                           className="text-[9px] font-bold text-zinc-600 hover:text-indigo-400 flex items-center gap-1 transition-colors px-2 py-1"
                                         >
@@ -622,13 +825,6 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave }) => 
                <Save size={20} />
             </button>
          </div>
-
-         <button 
-           onClick={handleExport}
-           className="pointer-events-auto h-14 px-8 rounded-2xl bg-white text-black font-black uppercase tracking-[0.15em] text-[10px] flex items-center gap-3 shadow-2xl hover:bg-zinc-200 transition-all active:scale-95"
-         >
-            <Share2 size={16} /> Export Strategy
-         </button>
       </div>
 
       <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-[#060608] to-transparent pointer-events-none z-40" />

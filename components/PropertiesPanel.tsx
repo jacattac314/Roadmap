@@ -2,7 +2,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { NodeData, NodeType, NodeSubtask, MeetingArtifact, Status } from '../types';
 import { MODEL_OPTIONS } from '../constants';
-import { generateAgentResponse } from '../services/geminiService';
+import { generateAgentResponse, transcribeAudio } from '../services/geminiService';
 import { X, Settings, FileText, Upload, Link, Plus, CheckSquare, Calendar, User, ArrowRight, Trash2, Brain, CheckCircle2, Sparkles, Loader2, GitBranch, Video, Mic, StopCircle, Clock, ChevronDown, ChevronRight, MessageSquare, AlertCircle, Ban, Activity } from 'lucide-react';
 
 interface PropertiesPanelProps {
@@ -24,6 +24,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, 
   const [meetingTime, setMeetingTime] = useState(0);
   const [isProcessingMeeting, setIsProcessingMeeting] = useState(false);
   const [expandedMeetingId, setExpandedMeetingId] = useState<string | null>(null);
+  
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
     let interval: any;
@@ -182,33 +185,72 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, 
     }
   };
 
-  const handleLaunchMeeting = () => setIsMeetingActive(true);
-
-  const handleEndMeeting = async () => {
-    setIsMeetingActive(false);
-    setIsProcessingMeeting(true);
+  const handleStartRecording = async () => {
     try {
-      const response = await generateAgentResponse({
-        modelName: 'gemini-3-flash-preview',
-        contents: [{ text: `Generate meeting artifacts for topic: ${node.label}. Include decisions and action items in JSON.` }],
-      });
-      if (response.text) {
-          const cleanText = response.text.replace(/```json\n|\n```/g, '').replace(/```/g, '').trim();
-          const json = JSON.parse(cleanText.substring(cleanText.indexOf('{'), cleanText.lastIndexOf('}') + 1));
-          const newMeeting: MeetingArtifact = {
-            id: `mtg-${Date.now()}`,
-            timestamp: Date.now(),
-            title: json.title || 'Sync',
-            duration: `${Math.floor(meetingTime / 60)}m ${meetingTime % 60}s`,
-            transcript: json.transcript || '',
-            summary: json.summary || '',
-            decisions: json.decisions || [],
-            actionItems: json.actionItems || []
-          };
-          handleChange('meetings', [newMeeting, ...(node.config.meetings || [])]);
-          setExpandedMeetingId(newMeeting.id);
-      }
-    } catch (e) {} finally { setIsProcessingMeeting(false); }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsMeetingActive(true);
+    } catch (err) {
+      console.error("Error accessing microphone:", err);
+      alert("Could not access microphone. Please ensure permissions are granted.");
+    }
+  };
+
+  const handleStopRecording = () => {
+    if (mediaRecorderRef.current && isMeetingActive) {
+      mediaRecorderRef.current.stop();
+      setIsMeetingActive(false);
+      setIsProcessingMeeting(true);
+
+      mediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = async () => {
+          const base64String = (reader.result as string).split(',')[1];
+          const mimeType = audioBlob.type || 'audio/webm';
+          
+          try {
+            const response = await transcribeAudio(base64String, mimeType);
+            
+            if (response.text) {
+              const cleanText = response.text.replace(/```json\n|\n```/g, '').replace(/```/g, '').trim();
+              const json = JSON.parse(cleanText.substring(cleanText.indexOf('{'), cleanText.lastIndexOf('}') + 1));
+              
+              const newMeeting: MeetingArtifact = {
+                id: `mtg-${Date.now()}`,
+                timestamp: Date.now(),
+                title: json.summary ? `Recording: ${json.summary.substring(0, 30)}...` : 'Audio Recording',
+                duration: `${Math.floor(meetingTime / 60)}m ${meetingTime % 60}s`,
+                transcript: json.transcript || '',
+                summary: json.summary || '',
+                decisions: json.decisions || [],
+                actionItems: json.actionItems || []
+              };
+              handleChange('meetings', [newMeeting, ...(node.config.meetings || [])]);
+              setExpandedMeetingId(newMeeting.id);
+            }
+          } catch (e) {
+            console.error("Transcription failed", e);
+            alert("Failed to transcribe audio. Please try again.");
+          } finally {
+            setIsProcessingMeeting(false);
+            // Stop all tracks to release microphone
+            mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
+          }
+        };
+      };
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -248,17 +290,23 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, 
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-cream custom-scrollbar relative">
-        {isMeetingActive && (
+        {(isMeetingActive || isProcessingMeeting) && (
            <div className="absolute inset-0 bg-slate/90 z-50 flex flex-col items-center justify-center text-white p-8 space-y-8 backdrop-blur-sm">
               <div className="w-24 h-24 rounded-full border-4 border-teal flex items-center justify-center bg-slate relative">
-                 <div className="absolute inset-0 rounded-full border-4 border-teal animate-ping opacity-30"></div>
-                 <Mic size={40} className="text-teal" />
+                 <div className={`absolute inset-0 rounded-full border-4 border-teal ${isMeetingActive ? 'animate-ping opacity-30' : ''}`}></div>
+                 {isProcessingMeeting ? <Loader2 size={40} className="text-teal animate-spin" /> : <Mic size={40} className="text-teal" />}
               </div>
               <div className="text-center">
-                 <h3 className="text-2xl font-bold font-mono tracking-widest">{formatTime(meetingTime)}</h3>
-                 <p className="text-sm text-teal font-bold uppercase tracking-wide mt-2">Recording...</p>
+                 <h3 className="text-2xl font-bold font-mono tracking-widest">{isProcessingMeeting ? 'Processing...' : formatTime(meetingTime)}</h3>
+                 <p className="text-sm text-teal font-bold uppercase tracking-wide mt-2">
+                    {isProcessingMeeting ? 'Transcribing Audio' : 'Recording In Progress'}
+                 </p>
               </div>
-              <button onClick={handleEndMeeting} className="px-8 py-3 bg-terra text-white font-bold uppercase tracking-widest border-2 border-white/20 hover:bg-red-600 transition-colors flex items-center gap-2"><StopCircle size={18} /> End Meeting</button>
+              {!isProcessingMeeting && (
+                  <button onClick={handleStopRecording} className="px-8 py-3 bg-terra text-white font-bold uppercase tracking-widest border-2 border-white/20 hover:bg-red-600 transition-colors flex items-center gap-2">
+                    <StopCircle size={18} /> Stop & Transcribe
+                  </button>
+              )}
            </div>
         )}
 
@@ -403,11 +451,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, 
                                        <span className="text-[8px] font-black text-teal flex items-center gap-1 bg-teal/10 px-2 py-1 rounded-sm border border-teal/20 uppercase tracking-widest">
                                           Linked Node
                                        </span>
-                                    ) : (
+                                    ) : !task.isCompleted && (
                                        <button 
                                           onClick={() => convertSubtaskToNode(idx)}
-                                          disabled={task.isCompleted}
-                                          className={`text-[8px] font-black px-2 py-1 flex items-center gap-1 transition-colors rounded-sm uppercase tracking-widest ${task.isCompleted ? 'bg-slate/5 text-slate/20 cursor-not-allowed' : 'text-slate hover:text-white bg-slate/10 hover:bg-slate'}`}
+                                          className="text-[8px] font-black px-2 py-1 flex items-center gap-1 transition-colors rounded-sm uppercase tracking-widest text-slate hover:text-white bg-slate/10 hover:bg-slate"
                                        >
                                           <GitBranch size={10} /> Convert Task to Node
                                        </button>
@@ -427,18 +474,53 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, 
         {activeTab === 'meetings' && (
            <div className="space-y-6">
               <div className="bg-white border-2 border-slate p-6 text-center space-y-4 shadow-hard-sm">
-                 <Video size={32} className="mx-auto text-teal" />
-                 <h3 className="text-sm font-bold text-slate uppercase tracking-wider">Node Sync Meeting</h3>
-                 <button onClick={handleLaunchMeeting} className="w-full py-3 bg-slate text-white font-bold uppercase tracking-widest hover:bg-teal transition-colors flex items-center justify-center gap-2"><Video size={16} /> Start Meeting</button>
+                 <Mic size={32} className="mx-auto text-teal" />
+                 <h3 className="text-sm font-bold text-slate uppercase tracking-wider">Record Meeting / Notes</h3>
+                 <p className="text-xs text-slate/60">Audio will be transcribed and action items extracted automatically.</p>
+                 <button onClick={handleStartRecording} className="w-full py-3 bg-slate text-white font-bold uppercase tracking-widest hover:bg-teal transition-colors flex items-center justify-center gap-2">
+                    <Mic size={16} /> Start Recording
+                 </button>
               </div>
               <div className="space-y-4 pb-20">
+                 {(node.config.meetings || []).length === 0 && (
+                     <div className="text-center p-8 opacity-40">
+                         <div className="text-xs font-bold uppercase tracking-widest text-slate">No recordings yet</div>
+                     </div>
+                 )}
                  {(node.config.meetings || []).map((mtg) => (
                     <div key={mtg.id} className="border-2 border-slate bg-white shadow-hard-sm">
                        <div onClick={() => setExpandedMeetingId(expandedMeetingId === mtg.id ? null : mtg.id)} className="flex items-center justify-between p-3 cursor-pointer">
-                          <h4 className="text-xs font-bold text-slate">{mtg.title} • {mtg.duration}</h4>
-                          <ChevronDown size={14} />
+                          <div className="flex items-center gap-2 overflow-hidden">
+                              <Video size={14} className="text-teal flex-shrink-0" />
+                              <h4 className="text-xs font-bold text-slate truncate">{mtg.title}</h4>
+                          </div>
+                          <div className="flex items-center gap-2">
+                             <span className="text-[10px] font-mono text-slate/50">{mtg.duration}</span>
+                             <ChevronDown size={14} className={`transform transition-transform ${expandedMeetingId === mtg.id ? 'rotate-180' : ''}`} />
+                          </div>
                        </div>
-                       {expandedMeetingId === mtg.id && <div className="p-4 border-t border-slate/10 bg-cream/30 text-[10px] space-y-3"><p className="text-slate">{mtg.summary}</p></div>}
+                       {expandedMeetingId === mtg.id && (
+                           <div className="p-4 border-t border-slate/10 bg-cream/30 space-y-4">
+                               <div className="space-y-1">
+                                   <div className="text-[9px] font-black uppercase tracking-widest text-slate/40">Summary</div>
+                                   <p className="text-xs text-slate leading-relaxed">{mtg.summary}</p>
+                               </div>
+                               {mtg.actionItems.length > 0 && (
+                                   <div className="space-y-1">
+                                       <div className="text-[9px] font-black uppercase tracking-widest text-teal">Action Items</div>
+                                       <ul className="list-disc pl-4 space-y-1">
+                                           {mtg.actionItems.map((item, i) => (
+                                               <li key={i} className="text-[10px] text-slate font-bold">{item}</li>
+                                           ))}
+                                       </ul>
+                                   </div>
+                               )}
+                               <div className="pt-2 border-t border-slate/5">
+                                   <div className="text-[9px] font-black uppercase tracking-widest text-slate/30 mb-1">Transcript</div>
+                                   <p className="text-[10px] text-slate/60 font-mono leading-relaxed max-h-32 overflow-y-auto">{mtg.transcript}</p>
+                               </div>
+                           </div>
+                       )}
                     </div>
                  ))}
               </div>

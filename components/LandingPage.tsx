@@ -1,13 +1,15 @@
 
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, Sparkles, Search, Globe, ChevronDown, Upload, Link, HardDrive, Copy, Loader2 } from 'lucide-react';
+import { ArrowRight, Sparkles, Search, Globe, ChevronDown, Loader2 } from 'lucide-react';
+import { MODEL_OPTIONS } from '../constants';
 
 interface LandingPageProps {
-  onStart: (input: string) => void;
+  onStart: (input: string, model?: string) => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
   const [input, setInput] = useState('');
+  const [model, setModel] = useState(MODEL_OPTIONS[0].value);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
@@ -53,7 +55,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
 
   const handleStart = () => {
     if (input.trim()) {
-      onStart(input);
+      onStart(input, model);
     }
   };
 
@@ -124,11 +126,22 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
                
                <div className="flex items-center justify-between px-2 pb-1">
                   <div className="flex gap-2">
+                     <div className="relative flex items-center">
+                        <Sparkles className="absolute left-3 w-3 h-3 md:w-3.5 md:h-3.5 text-zinc-300 pointer-events-none z-10" />
+                        <select
+                          value={model}
+                          onChange={(e) => setModel(e.target.value)}
+                          className="appearance-none pl-8 pr-8 py-1.5 rounded-full bg-[#2B2C2E] border border-[#444746] text-[#E3E3E3] text-sm font-medium hover:bg-[#37393B] transition-colors outline-none cursor-pointer min-w-[140px]"
+                        >
+                          {MODEL_OPTIONS.map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                        <ChevronDown className="absolute right-3 w-3 h-3 text-[#C4C7C5] pointer-events-none" />
+                     </div>
+
                      <button className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#2B2C2E] border border-[#444746] text-[#E3E3E3] text-sm font-medium hover:bg-[#37393B] transition-colors">
                         <Globe size={16} /> Web <ChevronDown size={14} className="text-[#C4C7C5]" />
-                     </button>
-                     <button className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#2B2C2E] border border-[#444746] text-[#E3E3E3] text-sm font-medium hover:bg-[#37393B] transition-colors">
-                        <Sparkles size={16} /> Fast Research <ChevronDown size={14} className="text-[#C4C7C5]" />
                      </button>
                   </div>
                   <button 
@@ -137,27 +150,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
                     className={`p-2 rounded-full transition-colors ${input.trim() ? 'bg-[#A8C7FA] text-[#062E6F] hover:bg-[#8AB4F8]' : 'bg-[#3C4043] text-[#8E918F] cursor-not-allowed'}`}
                   >
                      <ArrowRight size={20} />
-                  </button>
-               </div>
-            </div>
-
-            {/* Drop Files Area */}
-            <div className="mt-8 flex flex-col items-center">
-               <h3 className="text-[#E3E3E3] text-xl mb-2">or drop your files</h3>
-               <p className="text-[#C4C7C5] text-sm mb-8">pdf, images, docs, audio, and more</p>
-               
-               <div className="flex flex-wrap justify-center gap-3">
-                  <button className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#1E1F20] border border-[#444746] text-[#E3E3E3] text-sm font-medium hover:bg-[#2B2C2E] transition-colors group">
-                     <Upload size={18} className="text-[#A8C7FA] group-hover:text-white transition-colors" /> Upload files
-                  </button>
-                  <button className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#1E1F20] border border-[#444746] text-[#E3E3E3] text-sm font-medium hover:bg-[#2B2C2E] transition-colors group">
-                     <Link size={18} className="text-[#F28B82] group-hover:text-white transition-colors" /> Websites
-                  </button>
-                  <button className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#1E1F20] border border-[#444746] text-[#E3E3E3] text-sm font-medium hover:bg-[#2B2C2E] transition-colors group">
-                     <HardDrive size={18} className="text-[#81C995] group-hover:text-white transition-colors" /> Drive
-                  </button>
-                   <button className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#1E1F20] border border-[#444746] text-[#E3E3E3] text-sm font-medium hover:bg-[#2B2C2E] transition-colors group">
-                     <Copy size={18} className="text-[#FDD663] group-hover:text-white transition-colors" /> Copied text
                   </button>
                </div>
             </div>
