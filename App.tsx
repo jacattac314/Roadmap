@@ -5,16 +5,22 @@ import { INITIAL_NODES, INITIAL_EDGES, MARS_ROVER_PROJECT } from './constants';
 import { ProjectInput } from './components/ProjectInput';
 import { GenerationProgress } from './components/GenerationProgress';
 import { RoadmapVisualizer } from './components/RoadmapVisualizer';
+import { Canvas } from './components/Canvas';
+import { PropertiesPanel } from './components/PropertiesPanel';
 import { generateAgentResponse } from './services/geminiService';
 import { parseRoadmapData } from './utils/roadmapParser';
-import { User, LogOut, ChevronDown, Plus, FolderOpen, Check, AlertTriangle, Clock, Trash2 } from 'lucide-react';
+import { User, LogOut, ChevronDown, Plus, FolderOpen, Check, AlertTriangle, Clock, Trash2, LayoutTemplate, Workflow } from 'lucide-react';
 
 type AppState = 'input' | 'executing' | 'result';
+type ViewMode = 'roadmap' | 'workflow';
 
 const STORAGE_KEY = 'roadmap_gen_projects';
 
 export default function App() {
   const [view, setView] = useState<AppState>('input');
+  // Sub-view mode for 'result' state
+  const [resultMode, setResultMode] = useState<ViewMode>('roadmap');
+  
   const [nodes, setNodes] = useState<NodeData[]>(INITIAL_NODES);
   const [edges, setEdges] = useState<Edge[]>(INITIAL_EDGES);
   const [logs, setLogs] = useState<ExecutionLog[]>([]);
@@ -23,6 +29,10 @@ export default function App() {
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
+  
+  // Workflow Editor State
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [panelTab, setPanelTab] = useState<'details' | 'content' | 'meetings' | undefined>(undefined);
   
   // State for the editable roadmap data
   const [currentRoadmap, setCurrentRoadmap] = useState<RoadmapData | null>(null);
@@ -126,7 +136,7 @@ export default function App() {
     }
   };
 
-  const handleStart = async (input: string, model: string = 'gemini-3-flash-preview') => {
+  const handleStart = async (input: string, model: string = 'gemini-3-flash-preview', options: { useSearch: boolean, useThinking: boolean }) => {
     const name = input.substring(0, 30) + (input.length > 30 ? '...' : '');
     setProjectName(name);
     setView('executing');
@@ -139,7 +149,31 @@ export default function App() {
         return { ...n, config: { ...n.config, inputType: 'text' as const, staticInput: input } };
       }
       if (n.type === NodeType.AGENT) {
-        return { ...n, config: { ...n.config, model: model } };
+        let nodeModel = model;
+        let thinkingBudget = 0;
+        let useSearch = n.config.useSearch; // preserve default setting from node config
+
+        // Enhanced Logic for "Plan & Intelligence" Node
+        // This node handles complex logic, so we apply Thinking and Search here specifically if enabled.
+        if (n.id === 'agent-plan') {
+           useSearch = options.useSearch; // Enable search if requested
+           
+           if (options.useThinking) {
+              // If Thinking is enabled, upgrade to Gemini 3 Pro and allocate budget
+              nodeModel = 'gemini-3-pro-preview';
+              thinkingBudget = 32768; 
+           }
+        }
+
+        return { 
+           ...n, 
+           config: { 
+             ...n.config, 
+             model: nodeModel, 
+             useSearch: useSearch,
+             thinkingBudget: thinkingBudget
+           } 
+        };
       }
       return n;
     });
@@ -173,7 +207,8 @@ export default function App() {
             modelName: node.config.model || 'gemini-3-flash-preview',
             contents: [{ text: interpolatedPrompt }],
             systemInstruction: node.config.systemInstruction,
-            useSearch: node.config.useSearch
+            useSearch: node.config.useSearch,
+            thinkingBudget: node.config.thinkingBudget
           });
 
           if (result.error) throw new Error(result.error);
@@ -213,9 +248,6 @@ export default function App() {
     setTimeout(() => {
       setView('result');
       // Auto-save initial version
-      // We call this manually instead of handleSaveProject to avoid closure staleness issues if we were to just call the function directly
-      // But since handleSaveProject uses refs/state that might be stale in this closure, we rely on the state updates having propagated.
-      // For simplicity in this demo, we wait for user to save, or we could trigger an effect.
     }, 1000);
   };
 
@@ -224,13 +256,32 @@ export default function App() {
     window.location.reload();
   };
 
+  const handleNodeSelect = (id: string | null) => {
+     setSelectedNodeId(id);
+     // Default back to content tab when normally clicking nodes, unless it's a deselect
+     if (id) setPanelTab('content');
+  };
+
+  const handleUpdateNode = (updated: NodeData) => {
+    setNodes(prev => prev.map(n => n.id === updated.id ? updated : n));
+  };
+
+  const handleStartMeeting = (nodeId: string) => {
+     setSelectedNodeId(nodeId);
+     setPanelTab('meetings');
+     // Ensure we are in workflow view if not already
+     if (resultMode !== 'workflow') {
+        setResultMode('workflow');
+     }
+  };
+
   const currentUser = JSON.parse(localStorage.getItem('agent_builder_user') || '{"name": "Guest"}');
 
   return (
     <div className="min-h-screen bg-[#09090B] text-[#E3E3E3] font-sans flex flex-col">
       {/* Dynamic Header */}
-      <header className={`h-16 px-6 border-b border-[#27272A] flex items-center justify-between shrink-0 z-50 bg-[#09090B] ${view === 'result' ? 'sticky top-0 shadow-lg' : ''}`}>
-        <div className="flex items-center gap-6">
+      <header className={`h-16 px-4 md:px-6 border-b border-[#27272A] flex items-center justify-between shrink-0 z-50 bg-[#09090B] ${view === 'result' ? 'sticky top-0 shadow-lg' : ''}`}>
+        <div className="flex items-center gap-4 md:gap-6">
           <div 
             className="w-8 h-8 bg-[#A8C7FA] text-[#062E6F] font-bold flex items-center justify-center rounded-lg cursor-pointer hover:scale-105 transition-transform"
             onClick={() => setView('input')}
@@ -243,9 +294,11 @@ export default function App() {
               onClick={() => setIsProjectDropdownOpen(!isProjectDropdownOpen)}
               className="flex flex-col items-start group"
             >
-              <span className="text-sm font-bold text-zinc-200">{projectName}</span>
+              <span className="text-sm font-bold text-zinc-200 max-w-[150px] md:max-w-xs truncate">{projectName}</span>
               <span className="text-[10px] text-zinc-500 uppercase tracking-widest flex items-center gap-1 font-black">
-                {currentProjectId ? 'SAVED STRATEGY' : 'DRAFT ROADMAP'} <ChevronDown size={10} className={`transition-transform ${isProjectDropdownOpen ? 'rotate-180' : ''}`} />
+                <span className="hidden xs:inline">{currentProjectId ? 'SAVED STRATEGY' : 'DRAFT ROADMAP'}</span>
+                <span className="xs:hidden">ROADMAP</span>
+                <ChevronDown size={10} className={`transition-transform ${isProjectDropdownOpen ? 'rotate-180' : ''}`} />
               </span>
             </button>
 
@@ -294,20 +347,37 @@ export default function App() {
           </div>
         </div>
 
+        {view === 'result' && (
+           <div className="flex items-center bg-[#1E1F20] rounded-lg p-0.5 border border-[#27272A]">
+               <button 
+                  onClick={() => setResultMode('roadmap')}
+                  className={`px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md flex items-center gap-2 transition-all ${resultMode === 'roadmap' ? 'bg-zinc-700 text-white shadow' : 'text-zinc-500 hover:text-zinc-300'}`}
+               >
+                  <LayoutTemplate size={12} /> Roadmap
+               </button>
+               <button 
+                  onClick={() => setResultMode('workflow')}
+                  className={`px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md flex items-center gap-2 transition-all ${resultMode === 'workflow' ? 'bg-zinc-700 text-white shadow' : 'text-zinc-500 hover:text-zinc-300'}`}
+               >
+                  <Workflow size={12} /> Workflow
+               </button>
+           </div>
+        )}
+
         <div className="flex items-center gap-4">
           {view === 'result' && (
             <button 
               onClick={handleSaveProject}
               className="px-4 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white transition-all flex items-center gap-2"
             >
-              <FolderOpen size={12} /> Save
+              <FolderOpen size={12} /> <span className="hidden sm:inline">Save</span>
             </button>
           )}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1E1F20] border border-[#27272A]">
             <div className="w-5 h-5 bg-[#10B981] rounded-full flex items-center justify-center text-[8px] font-bold text-black">
               {currentUser.name?.[0] || 'U'}
             </div>
-            <span className="text-xs font-medium text-zinc-400 hidden sm:inline">{currentUser.name}</span>
+            <span className="text-xs font-medium text-zinc-400 hidden md:inline">{currentUser.name}</span>
             <button onClick={handleLogout} className="ml-2 hover:text-white transition-colors text-zinc-600">
               <LogOut size={14} />
             </button>
@@ -317,28 +387,53 @@ export default function App() {
 
       {/* Main Viewport */}
       <main className="flex-1 overflow-hidden relative">
-        {view === 'input' && <ProjectInput onStart={handleStart} />}
+        {view === 'input' && <ProjectInput onStart={handleStart} projects={projects} onLoadProject={handleLoadProject} />}
         {view === 'executing' && <GenerationProgress logs={logs} isRunning={isRunning} onViewRoadmap={() => setView('result')} />}
-        {view === 'result' && currentRoadmap && (
-           <RoadmapVisualizer 
-              key={roadmapVersion} 
-              data={currentRoadmap} 
-              onChange={setCurrentRoadmap}
-              onSave={handleSaveProject}
-              onBack={() => setView('input')} 
-            />
-        )}
-        {view === 'result' && !currentRoadmap && (
-          <div className="h-full flex flex-col items-center justify-center space-y-6 px-10 text-center">
-             <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-500">
-                <AlertTriangle size={32} />
-             </div>
-             <div className="space-y-2">
-               <h3 className="text-xl font-bold">Incomplete Data</h3>
-               <p className="text-zinc-500 text-sm">We couldn't generate a visual timeline because the required plan data is missing or corrupted.</p>
-             </div>
-             <button onClick={() => setView('input')} className="px-8 py-3 bg-white text-black rounded-full font-bold uppercase tracking-widest text-xs">Try Again</button>
-          </div>
+        {view === 'result' && (
+            <>
+               {resultMode === 'roadmap' ? (
+                  currentRoadmap ? (
+                    <RoadmapVisualizer 
+                        key={roadmapVersion} 
+                        data={currentRoadmap} 
+                        onChange={setCurrentRoadmap}
+                        onSave={handleSaveProject}
+                        onBack={() => setView('input')} 
+                    />
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center space-y-6 px-10 text-center">
+                        <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-500">
+                            <AlertTriangle size={32} />
+                        </div>
+                        <div className="space-y-2">
+                            <h3 className="text-xl font-bold">Incomplete Data</h3>
+                            <p className="text-zinc-500 text-sm">We couldn't generate a visual timeline because the required plan data is missing or corrupted.</p>
+                        </div>
+                        <button onClick={() => setView('input')} className="px-8 py-3 bg-white text-black rounded-full font-bold uppercase tracking-widest text-xs">Try Again</button>
+                    </div>
+                  )
+               ) : (
+                  <div className="h-full relative flex">
+                      <div className="flex-1 relative">
+                          <Canvas 
+                             nodes={nodes}
+                             edges={edges}
+                             selectedNodeId={selectedNodeId}
+                             onNodeSelect={handleNodeSelect}
+                             onNodesChange={setNodes}
+                             onStartMeeting={handleStartMeeting}
+                          />
+                      </div>
+                      <PropertiesPanel 
+                         isOpen={!!selectedNodeId}
+                         onClose={() => setSelectedNodeId(null)}
+                         node={nodes.find(n => n.id === selectedNodeId) || null}
+                         onUpdate={handleUpdateNode}
+                         initialTab={panelTab}
+                      />
+                  </div>
+               )}
+            </>
         )}
       </main>
     </div>

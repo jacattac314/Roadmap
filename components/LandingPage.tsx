@@ -4,7 +4,7 @@ import { ArrowRight, Sparkles, Search, Globe, ChevronDown, Loader2 } from 'lucid
 import { MODEL_OPTIONS } from '../constants';
 
 interface LandingPageProps {
-  onStart: (input: string, model?: string) => void;
+  onStart: (input: string, model: string, options: { useSearch: boolean, useThinking: boolean }) => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
@@ -55,7 +55,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
 
   const handleStart = () => {
     if (input.trim()) {
-      onStart(input, model);
+      onStart(input, model, { useSearch: false, useThinking: false });
     }
   };
 

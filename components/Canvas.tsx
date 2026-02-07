@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useCallback } from 'react';
 import { NodeData, Edge, NodeType } from '../types';
 import { Node } from './Node';
@@ -8,6 +9,7 @@ interface CanvasProps {
   selectedNodeId: string | null;
   onNodeSelect: (id: string | null) => void;
   onNodesChange: (nodes: NodeData[]) => void;
+  onStartMeeting: (id: string) => void;
 }
 
 export const Canvas: React.FC<CanvasProps> = ({
@@ -15,7 +17,8 @@ export const Canvas: React.FC<CanvasProps> = ({
   edges,
   selectedNodeId,
   onNodeSelect,
-  onNodesChange
+  onNodesChange,
+  onStartMeeting
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
@@ -110,6 +113,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             isSelected={selectedNodeId === node.id}
             onMouseDown={handleMouseDown}
             onClick={onNodeSelect}
+            onStartMeeting={onStartMeeting}
           />
         ))}
       </div>

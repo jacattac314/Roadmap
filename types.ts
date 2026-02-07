@@ -65,6 +65,7 @@ export interface NodeData {
     structuredConstraints?: string;
     structuredResources?: string;
     useSearch?: boolean;
+    thinkingBudget?: number;
   };
 }
 

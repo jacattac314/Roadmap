@@ -38,13 +38,15 @@ interface GenerateAgentOptions {
   contents: any[];
   systemInstruction?: string;
   useSearch?: boolean;
+  thinkingBudget?: number;
 }
 
 export const generateAgentResponse = async ({
   modelName,
   contents,
   systemInstruction,
-  useSearch
+  useSearch,
+  thinkingBudget
 }: GenerateAgentOptions): Promise<GeminiResponse> => {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -66,8 +68,8 @@ export const generateAgentResponse = async ({
           config: {
             systemInstruction: systemInstruction,
             tools: tools.length > 0 ? tools : undefined,
-            // Disable thinking for fast background agents to prevent timeouts
-            thinkingConfig: { thinkingBudget: 0 }
+            // If thinkingBudget is provided and greater than 0, use it. Otherwise, disable thinking (0).
+            thinkingConfig: { thinkingBudget: thinkingBudget && thinkingBudget > 0 ? thinkingBudget : 0 }
           },
         });
       };

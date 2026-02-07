@@ -1,16 +1,17 @@
 
 import React from 'react';
 import { NodeData, NodeType } from '../types';
-import { Play, Bot, Wrench, Flag, MoreHorizontal, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Play, Bot, Wrench, Flag, MoreHorizontal, Clock, CheckCircle2, AlertCircle, Mic } from 'lucide-react';
 
 interface NodeProps {
   data: NodeData;
   isSelected: boolean;
   onMouseDown: (e: React.MouseEvent, id: string) => void;
   onClick: (id: string) => void;
+  onStartMeeting: (id: string) => void;
 }
 
-export const Node: React.FC<NodeProps> = ({ data, isSelected, onMouseDown, onClick }) => {
+export const Node: React.FC<NodeProps> = ({ data, isSelected, onMouseDown, onClick, onStartMeeting }) => {
   const getIcon = () => {
     switch (data.type) {
       case NodeType.TRIGGER: return <Play size={16} />;
@@ -47,7 +48,7 @@ export const Node: React.FC<NodeProps> = ({ data, isSelected, onMouseDown, onCli
     <div
       className={`absolute w-64 bg-white border-2 border-slate transition-all group
         ${isSelected ? 'shadow-[8px_8px_0px_0px_#CE6764] -translate-y-1' : 'shadow-hard hover:shadow-[6px_6px_0px_0px_#456365]'}
-        cursor-grab active:cursor-grabbing
+        cursor-grab active:cursor-grabbing flex flex-col
       `}
       style={{
         left: data.x,
@@ -80,7 +81,7 @@ export const Node: React.FC<NodeProps> = ({ data, isSelected, onMouseDown, onCli
       </div>
 
       {/* Body */}
-      <div className="px-4 py-4 bg-white">
+      <div className="px-4 py-4 bg-white flex-1">
         <p className="text-xs text-slate font-medium leading-relaxed line-clamp-3">
           {data.description || 'No description provided.'}
         </p>
@@ -96,6 +97,25 @@ export const Node: React.FC<NodeProps> = ({ data, isSelected, onMouseDown, onCli
              </div>
           )}
         </div>
+      </div>
+
+      {/* Actions Footer */}
+      <div className="px-4 py-2 border-t-2 border-slate/10 bg-cream/30 flex justify-between items-center">
+         <div className="flex -space-x-1">
+            {(data.config.meetings || []).length > 0 && (
+               <div className="w-5 h-5 rounded-full bg-teal text-white flex items-center justify-center text-[8px] font-bold border border-white">
+                  {data.config.meetings?.length}
+               </div>
+            )}
+         </div>
+         <button 
+           onClick={(e) => { e.stopPropagation(); onStartMeeting(data.id); }}
+           className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-teal hover:text-white text-slate transition-colors"
+           title="Launch Meeting"
+         >
+            <Mic size={12} />
+            <span className="text-[9px] font-black uppercase tracking-widest">Meet</span>
+         </button>
       </div>
 
       {/* Ports */}

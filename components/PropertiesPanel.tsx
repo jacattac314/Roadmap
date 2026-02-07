@@ -11,9 +11,10 @@ interface PropertiesPanelProps {
   onClose: () => void;
   onUpdate: (updatedNode: NodeData) => void;
   onCreateNode?: (parentId: string, label: string) => string | null;
+  initialTab?: 'details' | 'content' | 'meetings';
 }
 
-export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, onClose, onUpdate, onCreateNode }) => {
+export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, onClose, onUpdate, onCreateNode, initialTab }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [activeTab, setActiveTab] = useState<'details' | 'content' | 'meetings'>('content');
@@ -27,6 +28,13 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, 
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+
+  // Watch for initialTab prop changes to switch tabs programmatically
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, node?.id]); // Also reset when node changes if desired, though usually controlled by parent
 
   useEffect(() => {
     let interval: any;
@@ -309,7 +317,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, 
               )}
            </div>
         )}
-
+        {/* ... rest of component ... */}
         {activeTab === 'content' && (
           <>
             {/* Manual Node Metadata Section */}
