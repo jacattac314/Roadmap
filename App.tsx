@@ -1,162 +1,125 @@
 
-import React, { useState } from 'react';
-import { NodeData, Edge, NodeType, ExecutionLog } from './types';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { NodeData, Edge, NodeType, ExecutionLog, Project } from './types';
 import { INITIAL_NODES, INITIAL_EDGES } from './constants';
-import { Canvas } from './components/Canvas';
-import { PropertiesPanel } from './components/PropertiesPanel';
-import { ExecutionModal } from './components/ExecutionModal';
+import { ProjectInput } from './components/ProjectInput';
+import { GenerationProgress } from './components/GenerationProgress';
+import { RoadmapVisualizer } from './components/RoadmapVisualizer';
 import { generateAgentResponse } from './services/geminiService';
-import { Play, Share2, Layout, Download, Grid } from 'lucide-react';
+import { parseRoadmapData } from './utils/roadmapParser';
+import { User, LogOut, ChevronDown, Plus, FolderOpen, Check, AlertTriangle, Clock, Trash2 } from 'lucide-react';
 
-// Helper type for context values that can be text or complex media objects
-interface ContextValue {
-  text?: string;
-  parts?: any[];
-  data?: any; // Parsed JSON data
-}
+type AppState = 'input' | 'executing' | 'result';
+
+const STORAGE_KEY = 'roadmap_gen_projects';
 
 export default function App() {
-  // State
+  const [view, setView] = useState<AppState>('input');
   const [nodes, setNodes] = useState<NodeData[]>(INITIAL_NODES);
   const [edges, setEdges] = useState<Edge[]>(INITIAL_EDGES);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  
-  // Execution State
-  const [isExecutionOpen, setIsExecutionOpen] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<ExecutionLog[]>([]);
+  const [isRunning, setIsRunning] = useState(false);
+  const [projectName, setProjectName] = useState('New Roadmap');
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
 
-  const selectedNode = nodes.find(n => n.id === selectedNodeId) || null;
+  // Persistence
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try { setProjects(JSON.parse(saved)); } catch (e) { console.error(e); }
+    }
+  }, []);
 
-  const handleNodeUpdate = (updatedNode: NodeData) => {
-    setNodes(nodes.map(n => n.id === updatedNode.id ? updatedNode : n));
-  };
+  const saveToLocalStorage = useCallback((updatedProjects: Project[]) => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProjects));
+  }, []);
 
-  const handleCreateChildNode = (parentId: string, label: string) => {
-    const parent = nodes.find(n => n.id === parentId);
-    if (!parent) return null;
-
-    const newNodeId = `node-${Date.now()}`;
-    const newNode: NodeData = {
-      id: newNodeId,
-      type: NodeType.AGENT,
-      label: label.substring(0, 30) + (label.length > 30 ? '...' : ''),
-      x: parent.x + 300,
-      y: parent.y,
-      description: label,
-      config: {
-        model: 'gemini-3-flash-preview'
-      }
+  const handleSaveProject = useCallback(() => {
+    const projectId = currentProjectId || `proj-${Date.now()}`;
+    const newProject: Project = {
+      id: projectId,
+      name: projectName,
+      nodes,
+      edges,
+      logs,
+      updatedAt: Date.now()
     };
 
-    const newEdge: Edge = {
-      id: `edge-${Date.now()}`,
-      source: parentId,
-      target: newNodeId
-    };
-
-    setNodes(prev => [...prev, newNode]);
-    setEdges(prev => [...prev, newEdge]);
-    
-    return newNodeId;
-  };
-
-  // Helper to safely access nested properties using dot notation
-  const getNestedValue = (obj: any, path: string): any => {
-    return path.split('.').reduce((prev, curr) => {
-      return prev ? prev[curr] : undefined;
-    }, obj);
-  };
-
-  // Resolves variable strings like "{{var}}" or "{{obj.prop}}" using the context
-  const interpolateVariablesText = (text: string, context: Record<string, ContextValue>) => {
-    const today = new Date().toLocaleDateString();
-    
-    return text.replace(/{{([^}]+)}}/g, (_, key) => {
-      const trimmedKey = key.trim();
-      
-      if (trimmedKey === 'today') return today;
-
-      // Handle dot notation (e.g. extractedData.product_name)
-      if (trimmedKey.includes('.')) {
-        const [rootVar, ...path] = trimmedKey.split('.');
-        const contextVal = context[rootVar];
-        if (contextVal?.data) {
-          const val = getNestedValue(contextVal.data, path.join('.'));
-          if (val !== undefined) {
-             if (typeof val === 'object') return JSON.stringify(val);
-             return String(val);
-          }
-        }
+    setProjects(prev => {
+      const existingIdx = prev.findIndex(p => p.id === projectId);
+      let updated;
+      if (existingIdx >= 0) {
+        updated = [...prev];
+        updated[existingIdx] = newProject;
+      } else {
+        updated = [newProject, ...prev];
       }
-
-      const val = context[trimmedKey];
-      // If the variable points to a JSON object (from a previous node), stringify it for the prompt
-      if (val?.data) return JSON.stringify(val.data);
-      return val?.text || `[Missing: ${trimmedKey}]`;
+      saveToLocalStorage(updated);
+      return updated;
     });
+    setCurrentProjectId(projectId);
+  }, [currentProjectId, projectName, nodes, edges, logs, saveToLocalStorage]);
+
+  const handleLoadProject = (project: Project) => {
+    setProjectName(project.name);
+    setCurrentProjectId(project.id);
+    setNodes(project.nodes);
+    setEdges(project.edges);
+    setLogs(project.logs);
+    setView('result');
+    setIsProjectDropdownOpen(false);
   };
 
-  // Constructs the API parts array by mixing text prompt with any referenced media variables
-  const constructApiParts = (promptTemplate: string, context: Record<string, ContextValue>) => {
-    const parts: any[] = [];
-    
-    // Check if the prompt references a variable that has media parts
-    const interpolatedText = interpolateVariablesText(promptTemplate, context);
-    
-    Object.keys(context).forEach(key => {
-        if (promptTemplate.includes(`{{${key}}}`) && context[key].parts) {
-            parts.push(...context[key].parts!);
-        }
-    });
-
-    parts.push({ text: interpolatedText });
-    
-    return parts;
+  const handleNewProject = () => {
+    setProjectName('New Roadmap');
+    setCurrentProjectId(null);
+    setNodes(INITIAL_NODES);
+    setEdges(INITIAL_EDGES);
+    setLogs([]);
+    setView('input');
+    setIsProjectDropdownOpen(false);
   };
 
-  const runWorkflow = async () => {
-    setIsExecutionOpen(true);
+  const handleDeleteProject = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setProjects(prev => {
+      const updated = prev.filter(p => p.id !== id);
+      saveToLocalStorage(updated);
+      return updated;
+    });
+    if (currentProjectId === id) {
+      handleNewProject();
+    }
+  };
+
+  const roadmapData = useMemo(() => {
+    const extractLog = logs.find(l => l.nodeLabel === 'Extract & Prioritize' && l.status === 'success');
+    const planLog = logs.find(l => l.nodeLabel === 'Plan & Intelligence' && l.status === 'success');
+    if (extractLog?.output && planLog?.output) {
+      return parseRoadmapData(extractLog.output, planLog.output);
+    }
+    return null;
+  }, [logs]);
+
+  const handleStart = async (input: string) => {
+    const name = input.substring(0, 30) + (input.length > 30 ? '...' : '');
+    setProjectName(name);
+    setView('executing');
     setIsRunning(true);
     setLogs([]);
 
-    // 1. Topological Sort for correct execution order
-    const adjacencyList = new Map<string, string[]>();
-    const inDegree = new Map<string, number>();
-
-    nodes.forEach(node => {
-        adjacencyList.set(node.id, []);
-        inDegree.set(node.id, 0);
+    const updatedNodes = nodes.map(n => {
+      if (n.id === 'trigger-input') {
+        return { ...n, config: { ...n.config, inputType: 'text' as const, staticInput: input } };
+      }
+      return n;
     });
+    setNodes(updatedNodes);
 
-    edges.forEach(edge => {
-        adjacencyList.get(edge.source)?.push(edge.target);
-        inDegree.set(edge.target, (inDegree.get(edge.target) || 0) + 1);
-    });
-
-    const queue: string[] = nodes.filter(n => inDegree.get(n.id) === 0).map(n => n.id);
-    const executionOrder: NodeData[] = [];
-
-    while (queue.length > 0) {
-        const nodeId = queue.shift()!;
-        const node = nodes.find(n => n.id === nodeId);
-        if (node) executionOrder.push(node);
-
-        const neighbors = adjacencyList.get(nodeId) || [];
-        neighbors.forEach(neighborId => {
-            inDegree.set(neighborId, (inDegree.get(neighborId) || 0) - 1);
-            if (inDegree.get(neighborId) === 0) {
-                queue.push(neighborId);
-            }
-        });
-    }
-
-    if (executionOrder.length === 0 && nodes.length > 0) {
-       executionOrder.push(...nodes);
-    }
-
-    // Context to store variables (outputs from nodes)
-    const context: Record<string, ContextValue> = {};
+    const context: Record<string, any> = {};
+    const executionOrder = updatedNodes.slice(0, 5);
 
     for (const node of executionOrder) {
       const logEntry: ExecutionLog = {
@@ -165,253 +128,163 @@ export default function App() {
         status: 'running',
         timestamp: Date.now()
       };
-
       setLogs(prev => [...prev, logEntry]);
 
       try {
         if (node.type === NodeType.TRIGGER) {
-          const outputVar = node.config.outputVar || 'userInput';
-          
-          if (node.config.inputType === 'structured') {
-              const { 
-                  structuredProductName, 
-                  structuredPersona, 
-                  structuredFeatures, 
-                  structuredConstraints, 
-                  structuredResources 
-              } = node.config;
-
-              const textBlock = `
-PRODUCT NAME: ${structuredProductName || 'Untitled'}
-TARGET PERSONA: ${structuredPersona || 'General Audience'}
-
-KEY FEATURES:
-${structuredFeatures || 'None specified'}
-
-CONSTRAINTS & TIMELINE:
-${structuredConstraints || 'None specified'}
-
-RESOURCES:
-${structuredResources || 'None specified'}
-              `.trim();
-
-              context[outputVar] = { text: textBlock };
-              logEntry.output = textBlock;
-              logEntry.input = { structured: node.config }; // Log structured data as input
-          }
-          else if (node.config.inputType === 'file' && node.config.fileData) {
-             context[outputVar] = {
-               text: `[File: ${node.config.fileName}]`,
-               parts: [{
-                 inlineData: {
-                   mimeType: node.config.fileMimeType || 'application/pdf',
-                   data: node.config.fileData
-                 }
-               }]
-             };
-             logEntry.output = `File loaded: ${node.config.fileName}`;
-          } 
-          else if (node.config.inputType === 'audio' && node.config.audioData) {
-             context[outputVar] = {
-               text: `[Audio Recording]`,
-               parts: [{
-                 inlineData: {
-                   mimeType: 'audio/webm',
-                   data: node.config.audioData
-                 }
-               }]
-             };
-             logEntry.output = "Audio recording loaded.";
-          } 
-          else {
-            // Default Text + URL Context + Summary
-            let val = node.config.staticInput || "";
-            if (node.config.summary) {
-              val += `\n\n[CONTEXT SUMMARY]: ${node.config.summary}`;
-            }
-            if (node.config.contentUrls?.length) {
-              val += `\n\n[REFERENCED URLS]: ${node.config.contentUrls.join(', ')}`;
-            }
-            if (!val) val = "No input provided";
-
-            context[outputVar] = { text: val };
-            logEntry.output = val;
-          }
-          
+          context['userInput'] = { text: input };
           logEntry.status = 'success';
-        } 
-        else if (node.type === NodeType.AGENT) {
-          // Prepare prompt and parts
-          const promptTemplate = node.config.prompt || '';
-          const apiParts = constructApiParts(promptTemplate, context);
+          logEntry.output = input;
+        } else if (node.type === NodeType.AGENT) {
+          const prompt = node.config.prompt || '';
+          const interpolatedPrompt = prompt.replace(/{{([^}]+)}}/g, (_, key) => context[key.trim()]?.text || '');
           
-          // Visual log shows interpolated text
-          logEntry.input = interpolateVariablesText(promptTemplate, context);
-          
-          // Call Gemini
           const result = await generateAgentResponse({
             modelName: node.config.model || 'gemini-3-flash-preview',
-            contents: apiParts,
+            contents: [{ text: interpolatedPrompt }],
             systemInstruction: node.config.systemInstruction,
             useSearch: node.config.useSearch
           });
 
-          if (result.error) {
-            throw new Error(result.error);
-          }
-
-          const outVar = node.config.outputVar || 'agentOutput';
+          if (result.error) throw new Error(result.error);
           
-          // Attempt to parse JSON to support structured variable access (e.g. {{extractedData.vision}})
-          let parsedData = null;
-          try {
-             const cleanText = result.text.replace(/```json\n|\n```/g, '').replace(/```/g, '').trim();
-             // Find first { and last } to handle preamble text if any (though prompt says ONLY JSON)
-             const firstBrace = cleanText.indexOf('{');
-             const lastBrace = cleanText.lastIndexOf('}');
-             if (firstBrace !== -1 && lastBrace !== -1) {
-                parsedData = JSON.parse(cleanText.substring(firstBrace, lastBrace + 1));
-             }
-          } catch (e) {
-             // Ignore parsing error, treat as text
-          }
-
-          context[outVar] = { 
-              text: result.text,
-              data: parsedData 
-          };
-          
-          logEntry.output = result.text; // Store raw text for logs
-          if (parsedData) {
-             // We can also store the parsed object in the log for better visualization later if needed
-             logEntry.output = parsedData;
-          }
-          
+          context[node.config.outputVar || 'output'] = { text: result.text };
           logEntry.status = 'success';
-          if (result.groundingMetadata) {
-             logEntry.groundingMetadata = result.groundingMetadata;
-          }
+          logEntry.output = result.text;
         }
-        else if (node.type === NodeType.END) {
-          // Find the last agent output for a cleaner display
-          const keys = Object.keys(context);
-          const lastKey = keys[keys.length - 1];
-          const lastVal = context[lastKey];
-          
-          logEntry.input = "Aggregating results...";
-          logEntry.output = lastVal?.text || lastVal?.data || "Workflow Completed";
-          logEntry.status = 'success';
-        }
-
-        // Update the log in state
-        setLogs(prev => prev.map(l => l.nodeId === node.id ? logEntry : l));
-        
-        // Pacing
-        await new Promise(r => setTimeout(r, 600));
-
+        setLogs(prev => prev.map(l => l.nodeId === node.id ? { ...logEntry } : l));
+        await new Promise(r => setTimeout(r, 1200));
       } catch (err: any) {
         logEntry.status = 'error';
         logEntry.output = err.message;
-        setLogs(prev => prev.map(l => l.nodeId === node.id ? logEntry : l));
+        setLogs(prev => prev.map(l => l.nodeId === node.id ? { ...logEntry } : l));
         setIsRunning(false);
-        return; // Stop execution
+        return;
       }
     }
 
     setIsRunning(false);
+    setTimeout(() => {
+      setView('result');
+      // Auto-save on completion if it's a new roadmap
+      handleSaveProject();
+    }, 1000);
   };
 
-  const exportLogs = () => {
-    const jsonString = `data:text/json;chatset=utf-8,${encodeURIComponent(
-      JSON.stringify(logs, null, 2)
-    )}`;
-    const link = document.createElement("a");
-    link.href = jsonString;
-    link.download = "roadmap_execution.json";
-    link.click();
+  const handleLogout = () => {
+    localStorage.removeItem('agent_builder_user');
+    window.location.reload();
   };
+
+  const currentUser = JSON.parse(localStorage.getItem('agent_builder_user') || '{"name": "Guest"}');
 
   return (
-    <div className="flex flex-col h-screen bg-cream text-slate font-sans selection:bg-teal selection:text-white">
-      {/* Top Navigation */}
-      <header className="h-16 border-b-2 border-slate bg-cream flex items-center justify-between px-6 z-30 relative shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-slate rounded-none border-2 border-slate flex items-center justify-center text-cream font-bold shadow-hard-sm">
-            G
+    <div className="min-h-screen bg-[#09090B] text-[#E3E3E3] font-sans flex flex-col">
+      {/* Dynamic Header */}
+      <header className={`h-16 px-6 border-b border-[#27272A] flex items-center justify-between shrink-0 z-50 bg-[#09090B] ${view === 'result' ? 'sticky top-0 shadow-lg' : ''}`}>
+        <div className="flex items-center gap-6">
+          <div 
+            className="w-8 h-8 bg-[#A8C7FA] text-[#062E6F] font-bold flex items-center justify-center rounded-lg cursor-pointer hover:scale-105 transition-transform"
+            onClick={() => setView('input')}
+          >
+            A
           </div>
-          <div>
-            <h1 className="font-bold text-slate text-xl tracking-tight">Roadmap<span className="text-terra">Gen</span></h1>
-          </div>
-        </div>
+          
+          <div className="relative">
+            <button 
+              onClick={() => setIsProjectDropdownOpen(!isProjectDropdownOpen)}
+              className="flex flex-col items-start group"
+            >
+              <span className="text-sm font-bold text-zinc-200">{projectName}</span>
+              <span className="text-[10px] text-zinc-500 uppercase tracking-widest flex items-center gap-1 font-black">
+                {currentProjectId ? 'SAVED STRATEGY' : 'DRAFT ROADMAP'} <ChevronDown size={10} className={`transition-transform ${isProjectDropdownOpen ? 'rotate-180' : ''}`} />
+              </span>
+            </button>
 
-        <div className="flex items-center gap-2">
-           <span className="text-xs font-bold uppercase tracking-widest text-teal flex items-center gap-1.5 border-2 border-teal px-3 py-1 rounded-full bg-cream">
-              <Grid size={12} /> Gemini Powered
-           </span>
+            {isProjectDropdownOpen && (
+              <div className="absolute left-0 top-full mt-2 w-72 bg-[#1E1F20] border border-[#3C4043] rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="p-2 border-b border-[#3C4043] flex items-center justify-between bg-black/20">
+                   <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">My Roadmaps</span>
+                   <button 
+                     onClick={handleNewProject}
+                     className="p-1.5 hover:bg-white/5 rounded-lg text-indigo-400"
+                   >
+                     <Plus size={16} />
+                   </button>
+                </div>
+                <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                  {projects.length === 0 ? (
+                    <div className="p-8 text-center text-zinc-600">
+                       <FolderOpen size={24} className="mx-auto mb-2 opacity-20" />
+                       <p className="text-xs">No saved roadmaps yet</p>
+                    </div>
+                  ) : (
+                    projects.map(p => (
+                      <div 
+                        key={p.id}
+                        onClick={() => handleLoadProject(p)}
+                        className={`group flex items-center justify-between p-3 cursor-pointer border-b border-white/[0.03] hover:bg-white/5 transition-colors ${currentProjectId === p.id ? 'bg-indigo-500/10' : ''}`}
+                      >
+                         <div className="flex flex-col min-w-0 pr-4">
+                            <span className={`text-xs font-bold truncate ${currentProjectId === p.id ? 'text-indigo-400' : 'text-zinc-300'}`}>{p.name}</span>
+                            <span className="text-[9px] text-zinc-600 flex items-center gap-1">
+                               <Clock size={8} /> {new Date(p.updatedAt).toLocaleDateString()}
+                            </span>
+                         </div>
+                         <button 
+                           onClick={(e) => handleDeleteProject(e, p.id)}
+                           className="p-1.5 opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-rose-500 transition-all"
+                         >
+                            <Trash2 size={12} />
+                         </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-4">
-           <button 
-             onClick={exportLogs}
-             disabled={logs.length === 0}
-             className="px-4 py-2 text-sm font-bold text-slate hover:text-teal transition-colors flex items-center gap-2 disabled:opacity-50 uppercase tracking-wide"
-           >
-            <Download size={16} />
-            JSON
-          </button>
-          <button
-            onClick={runWorkflow}
-            disabled={isRunning}
-            className={`px-6 py-2 text-sm font-bold bg-terra text-cream border-2 border-slate shadow-hard hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed rounded-none`}
-          >
-            <Play size={16} fill="currentColor" />
-            {isRunning ? 'GENERATING...' : 'RUN GENERATOR'}
-          </button>
+          {view === 'result' && (
+            <button 
+              onClick={handleSaveProject}
+              className="px-4 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white transition-all flex items-center gap-2"
+            >
+              <FolderOpen size={12} /> Save
+            </button>
+          )}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1E1F20] border border-[#27272A]">
+            <div className="w-5 h-5 bg-[#10B981] rounded-full flex items-center justify-center text-[8px] font-bold text-black">
+              {currentUser.name?.[0] || 'U'}
+            </div>
+            <span className="text-xs font-medium text-zinc-400 hidden sm:inline">{currentUser.name}</span>
+            <button onClick={handleLogout} className="ml-2 hover:text-white transition-colors text-zinc-600">
+              <LogOut size={14} />
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Main Workspace */}
-      <div className="flex-1 relative overflow-hidden flex">
-        
-        {/* Toolbar (Left) */}
-        <div className="w-20 border-r-2 border-slate bg-cream flex flex-col items-center py-8 gap-6 z-20">
-           <div className="p-3 bg-white border-2 border-slate text-slate shadow-hard-sm cursor-grab active:cursor-grabbing hover:bg-teal hover:text-white transition-colors" title="Drag Trigger">
-             <Play size={20} />
-           </div>
-           <div className="p-3 bg-white border-2 border-slate text-slate shadow-hard-sm cursor-grab active:cursor-grabbing hover:bg-teal hover:text-white transition-colors" title="Drag Agent">
-             <Layout size={20} />
-           </div>
-           <div className="h-[2px] w-8 bg-slate/20 my-2" />
-        </div>
-
-        {/* Canvas Area */}
-        <main className="flex-1 relative h-full">
-          <Canvas
-            nodes={nodes}
-            edges={edges}
-            selectedNodeId={selectedNodeId}
-            onNodeSelect={setSelectedNodeId}
-            onNodesChange={setNodes}
-          />
-        </main>
-
-        {/* Right Sidebar (Properties) */}
-        <PropertiesPanel
-          node={selectedNode}
-          isOpen={!!selectedNode}
-          onClose={() => setSelectedNodeId(null)}
-          onUpdate={handleNodeUpdate}
-          onCreateNode={handleCreateChildNode}
-        />
-      </div>
-
-      {/* Execution Modal */}
-      <ExecutionModal
-        isOpen={isExecutionOpen}
-        onClose={() => setIsExecutionOpen(false)}
-        logs={logs}
-        isRunning={isRunning}
-      />
+      {/* Main Viewport */}
+      <main className="flex-1 overflow-hidden relative">
+        {view === 'input' && <ProjectInput onStart={handleStart} />}
+        {view === 'executing' && <GenerationProgress logs={logs} isRunning={isRunning} onViewRoadmap={() => setView('result')} />}
+        {view === 'result' && roadmapData && <RoadmapVisualizer data={roadmapData} onBack={() => setView('input')} />}
+        {view === 'result' && !roadmapData && (
+          <div className="h-full flex flex-col items-center justify-center space-y-6 px-10 text-center">
+             <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-500">
+                <AlertTriangle size={32} />
+             </div>
+             <div className="space-y-2">
+               <h3 className="text-xl font-bold">Incomplete Data</h3>
+               <p className="text-zinc-500 text-sm">We couldn't generate a visual timeline because the required plan data is missing or corrupted.</p>
+             </div>
+             <button onClick={() => setView('input')} className="px-8 py-3 bg-white text-black rounded-full font-bold uppercase tracking-widest text-xs">Try Again</button>
+          </div>
+        )}
+      </main>
     </div>
   );
 }

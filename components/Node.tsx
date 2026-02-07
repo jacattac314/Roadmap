@@ -1,6 +1,7 @@
+
 import React from 'react';
 import { NodeData, NodeType } from '../types';
-import { Play, Bot, Wrench, Flag, MoreHorizontal } from 'lucide-react';
+import { Play, Bot, Wrench, Flag, MoreHorizontal, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface NodeProps {
   data: NodeData;
@@ -17,6 +18,16 @@ export const Node: React.FC<NodeProps> = ({ data, isSelected, onMouseDown, onCli
       case NodeType.TOOL: return <Wrench size={16} />;
       case NodeType.END: return <Flag size={16} />;
       default: return <MoreHorizontal size={16} />;
+    }
+  };
+
+  const getStatusIcon = () => {
+    switch (data.config.status) {
+      case 'completed': return <CheckCircle2 size={10} className="text-emerald-500" />;
+      case 'at_risk':
+      case 'blocked': return <AlertCircle size={10} className="text-terra" />;
+      case 'in_progress': return <Clock size={10} className="text-teal animate-pulse" />;
+      default: return null;
     }
   };
 
@@ -50,14 +61,22 @@ export const Node: React.FC<NodeProps> = ({ data, isSelected, onMouseDown, onCli
       }}
     >
       {/* Header */}
-      <div className={`px-4 py-3 border-b-2 border-slate flex items-center gap-3 ${styles.header}`}>
-        <div className="p-1 border border-current rounded-sm">
-          {getIcon()}
+      <div className={`px-4 py-3 border-b-2 border-slate flex items-center justify-between ${styles.header}`}>
+        <div className="flex items-center gap-3">
+          <div className="p-1 border border-current rounded-sm">
+            {getIcon()}
+          </div>
+          <div>
+            <h3 className="text-sm font-bold uppercase tracking-wide leading-none mb-1 truncate max-w-[120px]">{data.label}</h3>
+            <p className="text-[9px] opacity-80 uppercase tracking-widest">{data.type}</p>
+          </div>
         </div>
-        <div>
-          <h3 className="text-sm font-bold uppercase tracking-wide leading-none mb-1">{data.label}</h3>
-          <p className="text-[9px] opacity-80 uppercase tracking-widest">{data.type}</p>
-        </div>
+        {data.config.status && (
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-white/10 border border-white/20 text-[8px] font-black uppercase tracking-widest">
+            {getStatusIcon()}
+            {data.config.status.replace('_', ' ')}
+          </div>
+        )}
       </div>
 
       {/* Body */}
@@ -65,11 +84,18 @@ export const Node: React.FC<NodeProps> = ({ data, isSelected, onMouseDown, onCli
         <p className="text-xs text-slate font-medium leading-relaxed line-clamp-3">
           {data.description || 'No description provided.'}
         </p>
-        {data.type === NodeType.AGENT && (
-          <div className="mt-3 text-[10px] text-teal font-bold border border-teal/30 bg-teal/5 px-2 py-1 inline-block">
-            {data.config.model || 'default-model'}
-          </div>
-        )}
+        <div className="mt-3 flex items-center justify-between">
+          {data.type === NodeType.AGENT && (
+            <div className="text-[10px] text-teal font-bold border border-teal/30 bg-teal/5 px-2 py-1 inline-block">
+              {data.config.model || 'default-model'}
+            </div>
+          )}
+          {data.config.dueDate && (
+             <div className="flex items-center gap-1 text-[9px] font-bold text-slate/50 uppercase tracking-widest">
+                <Clock size={10} /> {data.config.dueDate}
+             </div>
+          )}
+        </div>
       </div>
 
       {/* Ports */}

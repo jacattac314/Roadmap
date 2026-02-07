@@ -1,8 +1,37 @@
+
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { GeminiResponse } from "../types";
 
-// Initialize the client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const REQUEST_TIMEOUT_MS = 600000; // Increased to 10 minutes
+
+// Helper for exponential backoff
+const MAX_RETRIES = 3;
+const BASE_DELAY = 2000;
+
+async function callWithRetry<T>(fn: () => Promise<T>, attempt = 1): Promise<T> {
+  try {
+    return await fn();
+  } catch (e: any) {
+    // Inspect error for rate limit indicators (429 or RESOURCE_EXHAUSTED)
+    const isRateLimit = 
+      e.status === 429 || 
+      e.code === 429 || 
+      e.status === 'RESOURCE_EXHAUSTED' ||
+      (e.message && (
+        e.message.includes('429') || 
+        e.message.includes('quota') || 
+        e.message.includes('RESOURCE_EXHAUSTED')
+      ));
+
+    if (isRateLimit && attempt <= MAX_RETRIES) {
+      const delay = BASE_DELAY * Math.pow(2, attempt - 1); // 2s, 4s, 8s
+      console.warn(`Gemini API rate limit hit. Retrying in ${delay}ms (Attempt ${attempt}/${MAX_RETRIES})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return callWithRetry(fn, attempt + 1);
+    }
+    throw e;
+  }
+}
 
 interface GenerateAgentOptions {
   modelName: string;
@@ -11,8 +40,6 @@ interface GenerateAgentOptions {
   useSearch?: boolean;
 }
 
-const REQUEST_TIMEOUT_MS = 240000; // 4 minutes
-
 export const generateAgentResponse = async ({
   modelName,
   contents,
@@ -20,48 +47,85 @@ export const generateAgentResponse = async ({
   useSearch
 }: GenerateAgentOptions): Promise<GeminiResponse> => {
   try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const tools: any[] = [];
     if (useSearch) {
       tools.push({ googleSearch: {} });
     }
 
-    // Create a timeout promise
-    const timeout = new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds. The model took too long to respond.`));
-      }, REQUEST_TIMEOUT_MS);
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-    // Ensure we are sending valid 'contents' structure to the new SDK
-    // contents here is expected to be an array of parts: [{text: '...'}, {inlineData: ...}]
-    // The SDK expects contents to be: string | Part | Part[] | Content | Content[]
-    // We will wrap our parts array in a Content-like structure if needed, or pass directly.
-    // For this helper, we assume 'contents' is an array of Parts.
+    try {
+      // Wrap the API call in a closure for retry logic
+      const makeRequest = async () => {
+        return await ai.models.generateContent({
+          model: modelName,
+          contents: { parts: contents },
+          config: {
+            systemInstruction: systemInstruction,
+            tools: tools.length > 0 ? tools : undefined,
+            // Disable thinking for fast background agents to prevent timeouts
+            thinkingConfig: { thinkingBudget: 0 }
+          },
+        });
+      };
 
-    // Race the API call against the timeout
-    const response = await Promise.race([
-      ai.models.generateContent({
-        model: modelName,
-        contents: { parts: contents },
-        config: {
-          systemInstruction: systemInstruction,
-          tools: tools.length > 0 ? tools : undefined,
-        },
-      }),
-      timeout
-    ]) as GenerateContentResponse;
+      const response = await callWithRetry(makeRequest);
 
-    return { 
-      text: response.text || "",
-      groundingMetadata: response.candidates?.[0]?.groundingMetadata 
-    };
+      clearTimeout(timeoutId);
+      return { 
+        text: response.text || "",
+        groundingMetadata: response.candidates?.[0]?.groundingMetadata 
+      };
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        throw new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds.`);
+      }
+      throw e;
+    }
   } catch (error: any) {
     console.error("Gemini API Error:", error);
-    // Provide user-friendly error message for timeouts
-    let errorMessage = error.message || "Unknown error occurred";
-    if (error.name === 'AbortError' || errorMessage.includes('timed out')) {
-        errorMessage = "The request timed out. Try reducing the complexity of the prompt or using a faster model.";
-    }
-    return { text: "", error: errorMessage };
+    return { text: "", error: error.message || "Unknown error" };
+  }
+};
+
+interface GenerateChatOptions {
+  modelName: string;
+  history: { role: string; parts: { text: string }[] }[];
+  systemInstruction?: string;
+}
+
+export const generateChatResponse = async ({
+  modelName,
+  history,
+  systemInstruction
+}: GenerateChatOptions): Promise<GeminiResponse> => {
+  try {
+     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+     
+     const makeRequest = async () => {
+       return await ai.models.generateContent({
+          model: modelName,
+          contents: history,
+          config: {
+             systemInstruction: systemInstruction,
+             temperature: 0.7,
+             // Allow a small thinking budget for high-quality chat responses if using Pro
+             thinkingConfig: modelName.includes('pro') ? { thinkingBudget: 4000 } : { thinkingBudget: 0 }
+          }
+       });
+     };
+
+     const response = await callWithRetry(makeRequest);
+
+     return {
+        text: response.text || "",
+        groundingMetadata: response.candidates?.[0]?.groundingMetadata
+     };
+  } catch (error: any) {
+     console.error("Gemini Chat Error:", error);
+     return { text: "", error: error.message };
   }
 };

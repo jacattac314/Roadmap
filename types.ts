@@ -13,6 +13,7 @@ export interface NodeSubtask {
   assignee?: string;
   dueDate?: string;
   convertedNodeId?: string;
+  isBlocked?: boolean;
 }
 
 export interface MeetingArtifact {
@@ -26,6 +27,14 @@ export interface MeetingArtifact {
   actionItems: string[];
 }
 
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  text: string;
+  timestamp: number;
+  isAction?: boolean;
+}
+
 export interface NodeData {
   id: string;
   type: NodeType;
@@ -33,42 +42,45 @@ export interface NodeData {
   x: number;
   y: number;
   description?: string;
-  // Configuration specific to execution
   config: {
-    prompt?: string; // For Agent
-    systemInstruction?: string; // For Agent
-    model?: string; // For Agent
-    outputVar?: string; // Variable name to store output
-    
-    // Content & Analysis Config (Expanded Node View)
+    status?: Status;
+    dueDate?: string;
+    prompt?: string;
+    systemInstruction?: string;
+    model?: string;
+    outputVar?: string;
     summary?: string;
     subtasks?: NodeSubtask[];
     contentUrls?: string[];
     meetings?: MeetingArtifact[];
-    
-    // Trigger Input Config
     inputType?: 'text' | 'file' | 'audio' | 'structured';
-    staticInput?: string; // Text input
-    fileData?: string; // Base64
+    staticInput?: string;
+    fileData?: string;
     fileName?: string;
     fileMimeType?: string;
-    audioData?: string; // Base64
-    
-    // Structured Input Config
+    audioData?: string;
     structuredProductName?: string;
     structuredPersona?: string;
     structuredFeatures?: string;
     structuredConstraints?: string;
     structuredResources?: string;
-    
-    useSearch?: boolean; // For Agent
+    useSearch?: boolean;
   };
 }
 
 export interface Edge {
   id: string;
-  source: string; // Node ID
-  target: string; // Node ID
+  source: string;
+  target: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  nodes: NodeData[];
+  edges: Edge[];
+  logs: ExecutionLog[];
+  updatedAt: number;
 }
 
 export interface WorkflowState {
@@ -95,8 +107,6 @@ export interface GeminiResponse {
   groundingMetadata?: any;
 }
 
-// --- Roadmap Visualization Types ---
-
 export type PriorityLevel = 'must_have' | 'should_have' | 'could_have' | 'wont_have';
 export type RiskLevel = 'low' | 'medium' | 'high';
 export type Status = 'planned' | 'in_progress' | 'completed' | 'blocked' | 'at_risk';
@@ -104,12 +114,15 @@ export type Status = 'planned' | 'in_progress' | 'completed' | 'blocked' | 'at_r
 export interface Workstream {
   id: string;
   name: string;
-  purpose: string; // Single sentence narrative
+  purpose: string;
 }
 
 export interface Subtask {
   name: string;
   status: Status;
+  assignee?: string;
+  dueDate?: string;
+  isBlocked?: boolean;
 }
 
 export interface RoadmapFeature {
@@ -117,20 +130,19 @@ export interface RoadmapFeature {
   name: string;
   description?: string;
   priority: PriorityLevel;
-  quarters: number[]; // [1, 2] means Q1 and Q2
-  dependencies?: string[]; // Names of features this depends on
+  quarters: number[];
+  dependencies?: string[];
   effort?: number;
-  workstream: string; // Name of the workstream
-  
-  // Intelligent Fields
+  workstream: string;
   status: Status;
-  subtasks?: Subtask[]; // Broken down tasks
+  subtasks?: Subtask[];
   risk: RiskLevel;
   riskReason?: string;
-  team: string; // e.g., "Backend", "Frontend", "Design"
-  confidence: number; // 0-100
+  risks?: string[];
+  team: string;
+  confidence: number;
   isCriticalPath?: boolean;
-  predictionRationale?: string; // Reasoning based on historical/simulated data
+  predictionRationale?: string;
 }
 
 export interface AIInsight {
