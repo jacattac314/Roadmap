@@ -1,4 +1,5 @@
 
+
 export enum NodeType {
   TRIGGER = 'TRIGGER',
   AGENT = 'AGENT',
@@ -83,6 +84,7 @@ export interface Project {
   logs: ExecutionLog[];
   roadmapData?: RoadmapData;
   updatedAt: number;
+  meetings?: MeetingArtifact[];
 }
 
 export interface WorkflowState {

@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
-import { Search, Globe, ChevronDown, Sparkles, ArrowRight, Notebook, Clock, AlertTriangle, CheckCircle2, Ban, Brain } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Search, Globe, ChevronDown, Sparkles, ArrowRight, Notebook, Clock, AlertTriangle, CheckCircle2, Ban, Brain, Mic, StopCircle } from 'lucide-react';
 import { MODEL_OPTIONS } from '../constants';
 import { Project } from '../types';
+import { transcribeAudio } from '../services/geminiService';
 
 interface ProjectInputProps {
   onStart: (input: string, model: string, options: { useSearch: boolean, useThinking: boolean }) => void;
@@ -15,10 +16,71 @@ export const ProjectInput: React.FC<ProjectInputProps> = ({ onStart, projects, o
   const [model, setModel] = useState(MODEL_OPTIONS[0].value);
   const [isWebEnabled, setIsWebEnabled] = useState(false);
   const [isThinkingEnabled, setIsThinkingEnabled] = useState(false);
+  
+  // Recording State
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   const handleStart = () => {
     if (input.trim()) {
       onStart(input, model, { useSearch: isWebEnabled, useThinking: isThinkingEnabled });
+    }
+  };
+
+  const handleToggleRecording = async () => {
+    if (isRecording) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+        setIsRecording(false);
+      }
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) audioChunksRef.current.push(event.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+           const reader = new FileReader();
+           reader.readAsDataURL(audioBlob);
+           reader.onloadend = async () => {
+             const base64String = (reader.result as string).split(',')[1];
+             const mimeType = audioBlob.type || 'audio/webm';
+             
+             setInput(prev => prev + (prev ? '\n\n' : '') + "[Processing meeting audio...]");
+             
+             try {
+                const response = await transcribeAudio(base64String, mimeType);
+                if (response.text) {
+                   let formattedText = response.text;
+                   try {
+                     const json = JSON.parse(response.text);
+                     formattedText = `Meeting Input:\nSummary: ${json.summary}\n\nTranscript:\n${json.transcript}`;
+                   } catch (e) {
+                     // ignore json parse error, use raw text
+                   }
+                   setInput(prev => prev.replace("[Processing meeting audio...]", formattedText));
+                }
+             } catch (e) {
+                console.error(e);
+                setInput(prev => prev.replace("[Processing meeting audio...]", "[Audio processing failed]"));
+             }
+             stream.getTracks().forEach(t => t.stop());
+           };
+        };
+
+        mediaRecorder.start();
+        setIsRecording(true);
+      } catch (err) {
+        console.error("Error accessing microphone:", err);
+        alert("Could not access microphone.");
+      }
     }
   };
 
@@ -43,13 +105,19 @@ export const ProjectInput: React.FC<ProjectInputProps> = ({ onStart, projects, o
 
       <div className="w-full max-w-3xl flex flex-col gap-8 relative z-10">
         <div className="flex flex-col gap-6">
-          <div className="bg-[#1E1F20] border border-[#444746] rounded-3xl md:rounded-[28px] p-3 md:p-4 flex flex-col gap-3 md:gap-4 shadow-2xl focus-within:border-[#A8C7FA] transition-all">
+          <div className={`bg-[#1E1F20] border ${isRecording ? 'border-rose-500 shadow-[0_0_30px_rgba(225,29,72,0.2)]' : 'border-[#444746]'} rounded-3xl md:rounded-[28px] p-3 md:p-4 flex flex-col gap-3 md:gap-4 shadow-2xl focus-within:border-[#A8C7FA] transition-all`}>
              <div className="flex items-start gap-3 md:gap-4 px-1 md:px-2 pt-1">
-                <Search className="text-zinc-400 mt-1.5 shrink-0 w-5 h-5 md:w-6 md:h-6" />
+                {isRecording ? (
+                   <div className="mt-1.5 shrink-0 w-5 h-5 md:w-6 md:h-6 flex items-center justify-center">
+                      <div className="w-3 h-3 bg-rose-500 rounded-full animate-ping" />
+                   </div>
+                ) : (
+                   <Search className="text-zinc-400 mt-1.5 shrink-0 w-5 h-5 md:w-6 md:h-6" />
+                )}
                 <textarea 
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Describe your product idea..."
+                  placeholder={isRecording ? "Listening..." : "Describe your product idea..."}
                   className="w-full bg-transparent text-white text-lg md:text-xl placeholder-zinc-500 resize-none outline-none font-normal leading-relaxed min-h-[40px] max-h-[300px]"
                   style={{ height: input ? 'auto' : '40px' }}
                   onKeyDown={(e) => {
@@ -93,6 +161,14 @@ export const ProjectInput: React.FC<ProjectInputProps> = ({ onStart, projects, o
                          title="Enable Deep Reasoning (Gemini 3 Pro + Thinking)"
                       >
                           <Brain className="w-3 h-3 md:w-3.5 md:h-3.5" /> <span className="hidden xs:inline">Reason</span>
+                      </button>
+
+                      <button 
+                         onClick={handleToggleRecording}
+                         className={`flex items-center justify-center p-1.5 rounded-full border transition-all ${isRecording ? 'bg-rose-500/20 text-rose-400 border-rose-500 animate-pulse' : 'bg-[#2B2C2E] border-[#444746] text-white hover:bg-[#37393B]'}`}
+                         title={isRecording ? "Stop Recording" : "Start Meeting / Dictate"}
+                      >
+                          {isRecording ? <StopCircle className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                       </button>
 
                       <button className="flex items-center justify-center p-1.5 rounded-full bg-[#2B2C2E] border border-[#444746] text-white hover:bg-[#37393B] transition-colors" title="Attach NotebookLM">

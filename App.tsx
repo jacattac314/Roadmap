@@ -1,18 +1,19 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { NodeData, Edge, NodeType, ExecutionLog, Project, RoadmapData } from './types';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { NodeData, Edge, NodeType, ExecutionLog, Project, RoadmapData, MeetingArtifact } from './types';
 import { INITIAL_NODES, INITIAL_EDGES, MARS_ROVER_PROJECT } from './constants';
 import { ProjectInput } from './components/ProjectInput';
 import { GenerationProgress } from './components/GenerationProgress';
 import { RoadmapVisualizer } from './components/RoadmapVisualizer';
 import { Canvas } from './components/Canvas';
 import { PropertiesPanel } from './components/PropertiesPanel';
-import { generateAgentResponse } from './services/geminiService';
+import { generateAgentResponse, transcribeAudio } from './services/geminiService';
 import { parseRoadmapData } from './utils/roadmapParser';
-import { User, LogOut, ChevronDown, Plus, FolderOpen, Check, AlertTriangle, Clock, Trash2, LayoutTemplate, Workflow } from 'lucide-react';
+import { User, LogOut, ChevronDown, Plus, FolderOpen, Check, AlertTriangle, Clock, Trash2, LayoutTemplate, Workflow, Video, StopCircle, Loader2, Mic } from 'lucide-react';
 
 type AppState = 'input' | 'executing' | 'result';
 type ViewMode = 'roadmap' | 'workflow';
+type MeetingState = 'idle' | 'recording' | 'processing';
 
 const STORAGE_KEY = 'roadmap_gen_projects';
 
@@ -35,6 +36,15 @@ export default function App() {
   const [recordingNodeId, setRecordingNodeId] = useState<string | null>(null);
   const [panelTab, setPanelTab] = useState<'details' | 'content' | 'meetings' | undefined>(undefined);
   
+  // Global Meeting State
+  const [meetingState, setMeetingState] = useState<MeetingState>('idle');
+  const [meetingProjectId, setMeetingProjectId] = useState<string | null>(null);
+  const [isMeetingDropdownOpen, setIsMeetingDropdownOpen] = useState(false);
+  const [meetingTimer, setMeetingTimer] = useState(0);
+  
+  const globalMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const globalAudioChunksRef = useRef<Blob[]>([]);
+
   // State for the editable roadmap data
   const [currentRoadmap, setCurrentRoadmap] = useState<RoadmapData | null>(null);
   // Version key to force visualizer remount on new projects
@@ -61,6 +71,19 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProjects));
   }, []);
 
+  // Meeting Timer
+  useEffect(() => {
+    let interval: any;
+    if (meetingState === 'recording') {
+      interval = setInterval(() => {
+        setMeetingTimer(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (meetingState === 'idle') setMeetingTimer(0);
+    }
+    return () => clearInterval(interval);
+  }, [meetingState]);
+
   const handleSaveProject = useCallback(() => {
     const projectId = currentProjectId || `proj-${Date.now()}`;
     const newProject: Project = {
@@ -78,7 +101,7 @@ export default function App() {
       let updated;
       if (existingIdx >= 0) {
         updated = [...prev];
-        updated[existingIdx] = newProject;
+        updated[existingIdx] = { ...updated[existingIdx], ...newProject }; // Merge to preserve meetings if any
       } else {
         updated = [newProject, ...prev];
       }
@@ -87,6 +110,101 @@ export default function App() {
     });
     setCurrentProjectId(projectId);
   }, [currentProjectId, projectName, nodes, edges, logs, currentRoadmap, saveToLocalStorage]);
+
+  const handleStartGlobalMeeting = async (targetProjectId: string) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      globalMediaRecorderRef.current = mediaRecorder;
+      globalAudioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          globalAudioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.start();
+      setMeetingState('recording');
+      setMeetingProjectId(targetProjectId);
+      setIsMeetingDropdownOpen(false);
+      setMeetingTimer(0);
+    } catch (err) {
+      console.error("Error accessing microphone:", err);
+      alert("Could not access microphone. Please check permissions.");
+    }
+  };
+
+  const handleStopGlobalMeeting = () => {
+    if (globalMediaRecorderRef.current && meetingState === 'recording') {
+      globalMediaRecorderRef.current.stop();
+      setMeetingState('processing');
+
+      globalMediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(globalAudioChunksRef.current, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = async () => {
+          const base64String = (reader.result as string).split(',')[1];
+          const mimeType = audioBlob.type || 'audio/webm';
+          
+          try {
+            const response = await transcribeAudio(base64String, mimeType);
+            
+            if (response.text) {
+              const cleanText = response.text.replace(/```json\n|\n```/g, '').replace(/```/g, '').trim();
+              let json;
+              try {
+                 json = JSON.parse(cleanText.substring(cleanText.indexOf('{'), cleanText.lastIndexOf('}') + 1));
+              } catch (e) {
+                 json = { summary: "Meeting Processed", transcript: cleanText, decisions: [], actionItems: [] };
+              }
+              
+              const newMeeting: MeetingArtifact = {
+                id: `mtg-${Date.now()}`,
+                timestamp: Date.now(),
+                title: json.summary ? `${json.summary.substring(0, 40)}...` : 'Meeting Recording',
+                duration: `${Math.floor(meetingTimer / 60)}m ${meetingTimer % 60}s`,
+                transcript: json.transcript || '',
+                summary: json.summary || '',
+                decisions: json.decisions || [],
+                actionItems: json.actionItems || []
+              };
+
+              // Save meeting to the specific project
+              setProjects(prev => {
+                const updated = prev.map(p => {
+                  if (p.id === meetingProjectId) {
+                    return {
+                      ...p,
+                      meetings: [newMeeting, ...(p.meetings || [])]
+                    };
+                  }
+                  return p;
+                });
+                saveToLocalStorage(updated);
+                return updated;
+              });
+
+              // If currently viewing that project, force refresh if needed or just notify
+              if (currentProjectId === meetingProjectId) {
+                 // Optional: Trigger a refresh of loaded data if needed, 
+                 // currently handleLoadProject sets from `projects` list reference? No, it sets from arg.
+                 // We might need to update current nodes if meetings were stored on nodes, but here they are on Project.
+              }
+            }
+          } catch (e) {
+            console.error("Transcription failed", e);
+            alert("Failed to process meeting.");
+          } finally {
+            setMeetingState('idle');
+            setMeetingProjectId(null);
+            globalMediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
+          }
+        };
+      };
+    }
+  };
 
   const handleLoadProject = (project: Project) => {
     setProjectName(project.name);
@@ -314,6 +432,12 @@ export default function App() {
         setRecordingNodeId(null);
      }
   };
+  
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   const currentUser = JSON.parse(localStorage.getItem('agent_builder_user') || '{"name": "Guest"}');
 
@@ -395,16 +519,77 @@ export default function App() {
                >
                   <LayoutTemplate size={12} /> Roadmap
                </button>
-               <button 
-                  onClick={() => setResultMode('workflow')}
-                  className={`px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md flex items-center gap-2 transition-all ${resultMode === 'workflow' ? 'bg-zinc-700 text-white shadow' : 'text-zinc-500 hover:text-zinc-300'}`}
-               >
-                  <Workflow size={12} /> Workflow
-               </button>
+               {/* Workflow button hidden as requested */}
            </div>
         )}
 
         <div className="flex items-center gap-4">
+          
+          {/* Global Meeting Icon */}
+          <div className="relative">
+             <button 
+                onClick={() => {
+                   if (meetingState === 'recording') {
+                      handleStopGlobalMeeting();
+                   } else if (meetingState === 'processing') {
+                      // Do nothing, wait
+                   } else {
+                      setIsMeetingDropdownOpen(!isMeetingDropdownOpen);
+                   }
+                }}
+                disabled={meetingState === 'processing'}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${meetingState === 'recording' ? 'bg-rose-500/10 border-rose-500 text-rose-500' : 'bg-[#1E1F20] border-[#27272A] text-zinc-400 hover:text-white hover:border-zinc-500'}`}
+                title="Start Global Meeting"
+             >
+                {meetingState === 'recording' ? (
+                   <div className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+                ) : meetingState === 'processing' ? (
+                   <Loader2 size={16} className="animate-spin text-indigo-500" />
+                ) : (
+                   <Video size={16} />
+                )}
+                {meetingState === 'recording' && <span className="text-xs font-mono font-bold">{formatTimer(meetingTimer)}</span>}
+             </button>
+
+             {/* Project Selection Dropdown */}
+             {isMeetingDropdownOpen && meetingState === 'idle' && (
+                <div className="absolute right-0 top-full mt-2 w-64 bg-[#1E1F20] border border-[#3C4043] rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 z-50">
+                   <div className="p-2 border-b border-[#3C4043] bg-black/20">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">Start meeting for...</span>
+                   </div>
+                   <div className="max-h-[250px] overflow-y-auto custom-scrollbar p-1">
+                      {projects.length === 0 ? (
+                         <div className="p-4 text-center">
+                            <p className="text-xs text-zinc-500 mb-2">No projects found</p>
+                            <button 
+                               onClick={() => {
+                                  handleNewProject();
+                                  setIsMeetingDropdownOpen(false);
+                               }}
+                               className="text-[10px] font-bold bg-indigo-600 text-white px-3 py-1.5 rounded-lg"
+                            >
+                               + Create New Project
+                            </button>
+                         </div>
+                      ) : (
+                         projects.map(p => (
+                            <button
+                               key={p.id}
+                               onClick={() => handleStartGlobalMeeting(p.id)}
+                               className="w-full text-left p-2.5 hover:bg-white/5 rounded-lg text-xs font-medium text-zinc-300 hover:text-white transition-colors flex items-center justify-between group"
+                            >
+                               <span className="truncate">{p.name}</span>
+                               <Video size={12} className="opacity-0 group-hover:opacity-100 text-indigo-400" />
+                            </button>
+                         ))
+                      )}
+                   </div>
+                </div>
+             )}
+          </div>
+
+          <div className="w-px h-6 bg-white/10 mx-1" />
+
           {view === 'result' && (
             <button 
               onClick={handleSaveProject}
