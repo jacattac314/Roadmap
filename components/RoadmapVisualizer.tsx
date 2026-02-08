@@ -1,7 +1,6 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { RoadmapData, PriorityLevel, RiskLevel, Status, RoadmapFeature, ChatMessage } from '../types';
-import { ChevronRight, AlertTriangle, Undo2, Share2, CheckCircle2, Clock, ChevronDown, ChevronUp, X, User, Flag, ArrowRight, Sparkles, Send, Loader2, Zap, Save, BarChart3, Edit2, Plus, LayoutList, CalendarRange, Brain, GitMerge, FileText, Activity, ShieldAlert, Link2 } from 'lucide-react';
+import { ChevronRight, AlertTriangle, Undo2, Share2, CheckCircle2, Clock, ChevronDown, ChevronUp, X, User, Flag, ArrowRight, Sparkles, Send, Loader2, Zap, Save, BarChart3, Edit2, Plus, LayoutList, CalendarRange, Brain, GitMerge, FileText, Activity, ShieldAlert, Link2, GripVertical, MoveHorizontal } from 'lucide-react';
 import { generateChatResponse, generateAgentResponse } from '../services/geminiService';
 
 interface Props {
@@ -9,6 +8,18 @@ interface Props {
   onBack?: () => void;
   onSave?: () => void;
   onChange?: (updatedData: RoadmapData) => void;
+}
+
+type DragMode = 'move' | 'resize-left' | 'resize-right';
+
+interface DragState {
+  featureId: string;
+  mode: DragMode;
+  startX: number;
+  startY: number;
+  originalFeature: RoadmapFeature;
+  currentFeature: RoadmapFeature; // The "Ghost" / Snapped state
+  colWidth: number;
 }
 
 export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave, onChange }) => {
@@ -33,13 +44,18 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave, onCha
   
   const featureRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const ganttContainerRef = useRef<HTMLDivElement>(null);
+  const gridHeaderRef = useRef<HTMLDivElement>(null);
+
+  // Drag & Drop State
+  const [dragState, setDragState] = useState<DragState | null>(null);
 
   // Helper to extract unique workstreams for Gantt view
-  // Defined here to be available for useEffect dependencies
   const ganttWorkstreams = useMemo(() => {
     const defined = data.workstreams.map(ws => ws.name);
+    // Include any workstreams dynamically added to features
     const fromFeatures = Array.from(new Set(localFeatures.map(f => f.workstream)));
-    return Array.from(new Set([...defined, ...fromFeatures]));
+    const combined = Array.from(new Set([...defined, ...fromFeatures]));
+    return combined;
   }, [data.workstreams, localFeatures]);
 
   // Living Documentation Data Aggregation
@@ -84,6 +100,126 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave, onCha
     }
   }, [chatMessages, isChatOpen]);
 
+  // Drag & Drop Interaction Handlers
+  const handleDragStart = (e: React.MouseEvent, feature: RoadmapFeature, mode: DragMode) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Calculate column width for snapping
+    // Grid: 250px + 1fr + 1fr + 1fr + 1fr
+    // If we grab the container width, remove 250, divide by 4.
+    let colWidth = 100; // default fallback
+    if (gridHeaderRef.current) {
+        const gridRect = gridHeaderRef.current.getBoundingClientRect();
+        // The first column is 250px fixed
+        const availableWidth = gridRect.width - 250; 
+        colWidth = availableWidth / 4;
+    }
+
+    setDragState({
+        featureId: feature.id,
+        mode,
+        startX: e.clientX,
+        startY: e.clientY,
+        originalFeature: { ...feature },
+        currentFeature: { ...feature },
+        colWidth
+    });
+  };
+
+  useEffect(() => {
+    // FIXED: Capture dragState in a local variable to narrow type inside callbacks and prevent arithmetic errors on null values.
+    const activeDragState = dragState;
+    if (!activeDragState) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+        const deltaX = e.clientX - activeDragState.startX;
+        const deltaQ = Math.round(deltaX / activeDragState.colWidth);
+        
+        let newQuarters = [...activeDragState.originalFeature.quarters];
+        
+        if (activeDragState.mode === 'move') {
+            // Shift entire range
+            newQuarters = activeDragState.originalFeature.quarters.map(q => q + deltaQ);
+            
+            // Workstream Reassignment (Vertical Drag)
+            // Identify which workstream row we are hovering over
+            // We use data-attributes on the workstream rows to identify them
+            const elements = document.elementsFromPoint(e.clientX, e.clientY);
+            const wsRow = elements.find(el => el.getAttribute('data-workstream-row'));
+            if (wsRow) {
+                const targetWs = wsRow.getAttribute('data-workstream-row');
+                if (targetWs && targetWs !== activeDragState.currentFeature.workstream) {
+                    setDragState(prev => prev ? ({
+                        ...prev,
+                        currentFeature: { ...prev.currentFeature, workstream: targetWs }
+                    }) : null);
+                }
+            }
+
+        } else if (activeDragState.mode === 'resize-left') {
+            const minQ = Math.min(...activeDragState.originalFeature.quarters);
+            const maxQ = Math.max(...activeDragState.originalFeature.quarters);
+            const newMin = Math.max(1, Math.min(maxQ, minQ + deltaQ)); // Clamp between 1 and maxQ
+            
+            // Rebuild array range
+            newQuarters = [];
+            for (let i = newMin; i <= maxQ; i++) newQuarters.push(i);
+
+        } else if (activeDragState.mode === 'resize-right') {
+            const minQ = Math.min(...activeDragState.originalFeature.quarters);
+            const maxQ = Math.max(...activeDragState.originalFeature.quarters);
+            const newMax = Math.min(4, Math.max(minQ, maxQ + deltaQ)); // Clamp between minQ and 4
+
+            // Rebuild array range
+            newQuarters = [];
+            for (let i = minQ; i <= newMax; i++) newQuarters.push(i);
+        }
+
+        // Clamp quarters generally to 1-4 and update state
+        // Filter out out-of-bounds
+        if (activeDragState.mode === 'move') {
+             // If moving pushes out of bounds, we clamp the shift
+             const currentMin = Math.min(...newQuarters);
+             const currentMax = Math.max(...newQuarters);
+             if (currentMin < 1) newQuarters = newQuarters.map(q => q + (1 - currentMin));
+             if (currentMax > 4) newQuarters = newQuarters.map(q => q - (currentMax - 4));
+        }
+
+        // Only update if changed
+        const sortedNew = [...new Set(newQuarters)].sort((a,b) => a-b);
+        const sortedCurr = [...new Set(activeDragState.currentFeature.quarters)].sort((a,b) => a-b);
+        
+        const quartersChanged = JSON.stringify(sortedNew) !== JSON.stringify(sortedCurr);
+        
+        if (quartersChanged) {
+            setDragState(prev => prev ? ({
+                ...prev,
+                currentFeature: { ...prev.currentFeature, quarters: sortedNew }
+            }) : null);
+        }
+    };
+
+    const handleMouseUp = () => {
+        // Commit changes
+        const updated = localFeatures.map(f => 
+            f.id === activeDragState.featureId ? activeDragState.currentFeature : f
+        );
+        setLocalFeatures(updated);
+        notifyChange(updated);
+        setDragState(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [dragState, localFeatures]);
+
+
   // Dependency Line Drawing Effect
   useEffect(() => {
     if (!showDependencies || viewMode !== 'gantt') {
@@ -96,9 +232,15 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave, onCha
       const containerRect = ganttContainerRef.current.getBoundingClientRect();
       const lines: React.ReactNode[] = [];
 
-      localFeatures.forEach(feature => {
+      // Use the "Live" features (including ghost) for calculating lines
+      const activeFeatures = localFeatures.map(f => 
+          (dragState && f.id === dragState.featureId) ? dragState.currentFeature : f
+      );
+
+      activeFeatures.forEach(feature => {
         if (!feature.dependencies || feature.dependencies.length === 0) return;
         
+        // We need to find elements. For dragging element, we rely on the ghost element in the DOM
         const targetEl = featureRefs.current.get(feature.id);
         if (!targetEl) return;
         const targetRect = targetEl.getBoundingClientRect();
@@ -108,7 +250,7 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave, onCha
 
         feature.dependencies.forEach(dep => {
              // Find dependency feature by ID or Name
-             const sourceFeature = localFeatures.find(f => f.id === dep || f.name === dep);
+             const sourceFeature = activeFeatures.find(f => f.id === dep || f.name === dep);
              if (!sourceFeature) return;
 
              const sourceEl = featureRefs.current.get(sourceFeature.id);
@@ -129,16 +271,22 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave, onCha
              
              const d = `M ${x1} ${y1} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x2} ${y2}`;
 
+             // Check violation (End > Start is usually okay, but here if Dep ends AFTER Dependent starts, it might be a risk)
+             // Simple logic: Source maxQ vs Target minQ
+             const sourceMaxQ = Math.max(...sourceFeature.quarters);
+             const targetMinQ = Math.min(...feature.quarters);
+             const isViolation = sourceMaxQ >= targetMinQ; 
+
              lines.push(
                 <path 
                    key={`${sourceFeature.id}-${feature.id}`} 
                    d={d} 
-                   stroke="#6366f1" 
-                   strokeWidth="2" 
+                   stroke={isViolation ? "#f43f5e" : "#6366f1"} 
+                   strokeWidth={isViolation ? "3" : "2"} 
                    fill="none" 
                    opacity="0.6" 
-                   strokeDasharray="4 4"
-                   markerEnd="url(#arrowhead-rel)"
+                   strokeDasharray={isViolation ? "" : "4 4"}
+                   markerEnd={isViolation ? "url(#arrowhead-violation)" : "url(#arrowhead-rel)"}
                    className="animate-in fade-in duration-500"
                 />
              );
@@ -151,22 +299,26 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave, onCha
     let rafId: number;
     const tick = () => {
        drawDependencies();
-       // rafId = requestAnimationFrame(tick); // Continuous update might be heavy, stick to events + one-off
+       rafId = requestAnimationFrame(tick);
     };
     
     // Initial draw
-    setTimeout(tick, 100); // Small delay to ensure layout is stable
+    tick();
     
     window.addEventListener('resize', tick);
-    // Observe container size changes if possible, or just rely on state triggers
     
     return () => {
       window.removeEventListener('resize', tick);
       cancelAnimationFrame(rafId);
     };
-  }, [showDependencies, viewMode, localFeatures, expandedFeatures, ganttWorkstreams]);
+  }, [showDependencies, viewMode, localFeatures, expandedFeatures, ganttWorkstreams, dragState]);
 
   const toggleExpanded = (id: string) => {
+    // Prevent toggle if we just finished dragging (simple heuristic: if drag state was just active, we might click)
+    // But since mouseUp clears drag state, we handle this in onClick by checking drag status?
+    // Actually, simple onclick is fine because if we dragged, the mouseup/click fires. 
+    // We can just check if mouse moved significantly?
+    // For now, standard click behavior is fine as long as we stopPropagation on the drag handlers.
     const next = new Set(expandedFeatures);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -441,7 +593,7 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave, onCha
              <div className="overflow-x-auto pb-4">
                <div className="min-w-[1024px] px-6">
                  {/* Gantt Header */}
-                 <div className="grid grid-cols-[250px_1fr_1fr_1fr_1fr] gap-4 sticky top-0 bg-[#060608]/95 backdrop-blur-sm z-30 py-4 border-b border-white/10 items-end">
+                 <div ref={gridHeaderRef} className="grid grid-cols-[250px_1fr_1fr_1fr_1fr] gap-4 sticky top-0 bg-[#060608]/95 backdrop-blur-sm z-30 py-4 border-b border-white/10 items-end">
                     <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest pl-2 pb-1">Workstream</div>
                     {[1, 2, 3, 4].map(q => (
                        <div key={q} className="bg-[#111114] rounded-xl border border-white/5 p-3 text-center shadow-lg">
@@ -455,13 +607,25 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave, onCha
 
                  {/* Gantt Body */}
                  <div ref={ganttContainerRef} className="pb-20 relative z-10">
-                    <div className="space-y-8">
+                    <div className="space-y-8 select-none">
                       {ganttWorkstreams.map(ws => {
-                         const wsFeatures = localFeatures.filter(f => f.workstream === ws);
+                         // Filter features for this workstream, but handle drag-ghost logic:
+                         // If a feature is being dragged OUT of this workstream, we show it (ghost mode) or hide it?
+                         // If a feature is being dragged INTO this workstream (ghost.workstream === ws), we show the ghost here.
+                         
+                         // Base features in this WS (excluding the one being dragged if it's currently being dragged)
+                         const wsFeatures = localFeatures.filter(f => f.workstream === ws && (!dragState || f.id !== dragState.featureId));
+                         
+                         // Add the Ghost feature if it belongs here
+                         if (dragState && dragState.currentFeature.workstream === ws) {
+                            wsFeatures.push(dragState.currentFeature);
+                         }
+
+                         // Optional Filter
                          if (showOnlyCriticalPath && wsFeatures.every(f => !f.isCriticalPath)) return null;
 
                          return (
-                            <div key={ws} className="relative">
+                            <div key={ws} className="relative" data-workstream-row={ws}>
                                {/* Workstream Row Title */}
                                <div className="sticky left-0 z-20 mb-3 pl-2 flex items-center gap-2">
                                   <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
@@ -476,11 +640,14 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave, onCha
                                      const startQ = Math.min(...feature.quarters);
                                      const endQ = Math.max(...feature.quarters);
                                      const span = endQ - startQ + 1;
-                                     const isExpanded = expandedFeatures.has(feature.id);
+                                     
+                                     // Is this the "Ghost" / Dragged item?
+                                     const isGhost = dragState && dragState.featureId === feature.id;
+                                     const isExpanded = expandedFeatures.has(feature.id) && !isGhost;
 
                                      return (
                                         <React.Fragment key={feature.id}>
-                                          <div className="grid grid-cols-[250px_1fr_1fr_1fr_1fr] gap-4 items-center group relative hover:bg-white/[0.02] rounded-lg transition-colors p-1">
+                                          <div className={`grid grid-cols-[250px_1fr_1fr_1fr_1fr] gap-4 items-center group relative rounded-lg transition-colors p-1 ${isGhost ? 'z-50' : 'hover:bg-white/[0.02]'}`}>
                                              {/* Background Columns for Grid Effect */}
                                              <div className="absolute inset-0 grid grid-cols-[250px_1fr_1fr_1fr_1fr] gap-4 pointer-events-none opacity-20">
                                                  <div />
@@ -492,11 +659,11 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave, onCha
 
                                              {/* Label */}
                                              <div 
-                                                className="pl-6 pr-4 min-w-0 relative z-10 border-l-2 border-transparent group-hover:border-indigo-500/30 transition-all cursor-pointer"
-                                                onClick={() => toggleExpanded(feature.id)}
+                                                className={`pl-6 pr-4 min-w-0 relative z-10 border-l-2 border-transparent transition-all cursor-pointer ${!isGhost ? 'group-hover:border-indigo-500/30' : ''}`}
+                                                onClick={() => !isGhost && toggleExpanded(feature.id)}
                                                 title={`${feature.name}\n${feature.description || ''}`}
                                              >
-                                                <div className={`text-[11px] font-bold truncate transition-colors ${isExpanded ? 'text-indigo-400' : 'text-zinc-400 group-hover:text-white'}`}>
+                                                <div className={`text-[11px] font-bold truncate transition-colors ${isExpanded ? 'text-indigo-400' : isGhost ? 'text-indigo-300' : 'text-zinc-400 group-hover:text-white'}`}>
                                                    {feature.name}
                                                 </div>
                                                 <div className="flex items-center gap-2 mt-0.5">
@@ -508,22 +675,51 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave, onCha
 
                                              {/* Bar */}
                                              <div 
-                                                ref={(el) => { if (el) featureRefs.current.set(feature.id, el); else featureRefs.current.delete(feature.id); }}
-                                                className={`h-7 rounded-md relative flex items-center px-3 text-[9px] font-black uppercase tracking-widest text-white/90 shadow-lg cursor-pointer transition-all hover:scale-[1.01] hover:brightness-110 active:scale-[0.99] z-20 ${getStatusColor(feature.status)} border border-white/10`}
+                                                ref={(el) => { if (el && !isGhost) featureRefs.current.set(feature.id, el); else if (!isGhost) featureRefs.current.delete(feature.id); }}
+                                                className={`h-7 rounded-md relative flex items-center px-3 text-[9px] font-black uppercase tracking-widest text-white/90 shadow-lg cursor-grab active:cursor-grabbing transition-all hover:scale-[1.01] hover:brightness-110 z-20 ${getStatusColor(feature.status)} border border-white/10 ${isGhost ? 'opacity-90 ring-2 ring-indigo-400 shadow-[0_0_20px_rgba(99,102,241,0.4)]' : ''}`}
                                                 style={{
                                                    gridColumnStart: startQ + 1,
                                                    gridColumnEnd: `span ${span}`
                                                 }}
-                                                onClick={() => toggleExpanded(feature.id)}
-                                                title={`Status: ${feature.status}\n${feature.description || 'Click to expand'}`}
+                                                onMouseDown={(e) => handleDragStart(e, feature, 'move')}
+                                                onClick={(e) => {
+                                                    // Prevent toggle on click if dragging happened? 
+                                                    // Handled by standard events usually
+                                                    if (!isGhost) toggleExpanded(feature.id);
+                                                }}
                                              >
-                                                <span className="truncate w-full drop-shadow-md">{feature.name}</span>
-                                                {feature.isCriticalPath && <Zap size={10} className="absolute right-2 text-amber-300 fill-current" />}
+                                                {/* Left Resize Handle */}
+                                                <div 
+                                                    className="absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize hover:bg-white/20 flex items-center justify-center group/handle"
+                                                    onMouseDown={(e) => handleDragStart(e, feature, 'resize-left')}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    <div className="w-0.5 h-3 bg-white/30 group-hover/handle:bg-white rounded-full" />
+                                                </div>
+
+                                                <span className="truncate w-full drop-shadow-md text-center pointer-events-none">{feature.name}</span>
+                                                {feature.isCriticalPath && <Zap size={10} className="absolute right-3 text-amber-300 fill-current pointer-events-none" />}
+
+                                                {/* Right Resize Handle */}
+                                                <div 
+                                                    className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize hover:bg-white/20 flex items-center justify-center group/handle"
+                                                    onMouseDown={(e) => handleDragStart(e, feature, 'resize-right')}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    <div className="w-0.5 h-3 bg-white/30 group-hover/handle:bg-white rounded-full" />
+                                                </div>
+                                                
+                                                {/* Tooltip during Drag */}
+                                                {isGhost && (
+                                                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-2 py-1 rounded text-[9px] font-bold whitespace-nowrap shadow-xl">
+                                                        Q{startQ} - Q{endQ}
+                                                    </div>
+                                                )}
                                              </div>
                                           </div>
 
                                           {/* Expanded Detail Panel */}
-                                          {isExpanded && (
+                                          {isExpanded && !isGhost && (
                                              <div className="grid grid-cols-[250px_1fr] gap-4 animate-in slide-in-from-top-2 duration-200 mb-4">
                                                  <div className="flex flex-col items-end pr-6 pt-2 border-r border-white/5">
                                                      <button onClick={() => updateFeature(feature.id, { status: cycleStatus(feature.status) })} className="text-[9px] font-black text-zinc-500 hover:text-white transition-colors uppercase tracking-widest mb-2">Change Status</button>
@@ -582,6 +778,9 @@ export const RoadmapVisualizer: React.FC<Props> = ({ data, onBack, onSave, onCha
                         <svg className="w-full h-full">
                           <defs>
                             <marker id="arrowhead-rel" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" fill="#6366f1">
+                              <polygon points="0 0, 6 3, 0 6" />
+                            </marker>
+                            <marker id="arrowhead-violation" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" fill="#f43f5e">
                               <polygon points="0 0, 6 3, 0 6" />
                             </marker>
                           </defs>

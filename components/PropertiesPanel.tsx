@@ -83,6 +83,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, 
     onUpdate({ ...node, label: value });
   };
 
+  const handleDescriptionChange = (value: string) => {
+    onUpdate({ ...node, description: value });
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -338,6 +342,17 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ node, isOpen, 
         {/* ... rest of component ... */}
         {activeTab === 'content' && (
           <>
+            <div className="space-y-1.5">
+               <label className="text-[10px] font-black text-slate/40 uppercase tracking-widest ml-1">Description</label>
+               <textarea
+                 rows={3}
+                 value={node.description || ''}
+                 onChange={(e) => handleDescriptionChange(e.target.value)}
+                 className="w-full px-3 py-2 bg-white border-2 border-slate text-xs font-medium text-slate resize-none focus:border-teal outline-none"
+                 placeholder="Describe the node's purpose..."
+               />
+            </div>
+
             {/* Manual Node Metadata Section */}
             <div className="space-y-4">
               <h3 className="text-xs font-bold text-slate uppercase tracking-widest flex items-center gap-2">
